@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import { answered, FakeFleet, FakeGitHub } from '../../../core/tests/support/fake-github.js';
 import { BatchApply } from '../../src/app/apply/batch-apply.js';
+import { type SettingField, settingSections } from '../../src/app/profile-editor/setting-fields.js';
 import { mkdir, readFile, readdir, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
@@ -387,4 +388,99 @@ test('leaving while a batch starts cleans up even when its files are created lat
   expect(batch.state.value).toEqual({ kind: 'idle' });
   expect(await pending()).toEqual([]);
   expect(writes(of('lunch/app'))).toEqual([]);
+});
+
+function setting(path: string): SettingField {
+  const field = settingSections
+    .flatMap((section) => section.groups.flatMap((group) => group.fields))
+    .find((candidate) => candidate.path.join('.') === path);
+  if (field === undefined) {
+    throw new Error('The editor has no such setting.');
+  }
+  return field;
+}
+
+function oneOffRows(batch: BatchApply): string[] {
+  return batch.members.value.map(
+    (member) =>
+      `${member.repository}: ${member.sections
+        .flatMap((section) => section.rows.map((row) => `${row.key}${row.oneOff === true ? ' (one-off)' : ''}`))
+        .join(', ')}`,
+  );
+}
+
+test('a batch that changes settings once gives every repository the same edits and writes only them', async () => {
+  const { github, of } = fleet('lunch/app', 'lunch/api');
+  of('lunch/api').state.repository['has_wiki'] = false;
+  const batch = new BatchApply(github, () => undefined);
+
+  await batch.startWithoutProfile(['lunch/app', 'lunch/api']);
+  expect(batch.state.value).toEqual({ kind: 'editing', profileName: '', repositories: ['lunch/app', 'lunch/api'] });
+  await batch.editor.value?.set(setting('repository.has_wiki'), false);
+  await batch.editor.value?.set(setting('repository.has_projects'), false);
+  await batch.review();
+
+  expect(statuses(batch)).toEqual(['lunch/app changes 1', 'lunch/api changes 1']);
+  expect(oneOffRows(batch)).toEqual([
+    'lunch/app: repository.has_projects (one-off), repository.has_wiki (one-off)',
+    'lunch/api: repository.has_projects (one-off)',
+  ]);
+  expect(writes(of('lunch/app'))).toEqual([]);
+
+  await batch.apply();
+
+  expect(batch.state.value).toMatchObject({ kind: 'applied', left: 0 });
+  expect(of('lunch/app').state.repository).toMatchObject({ has_wiki: false, has_projects: false });
+  expect(of('lunch/api').state.repository).toMatchObject({ has_wiki: false, has_projects: false });
+  expect(await pending()).toEqual([]);
+});
+
+test('going back to the edits and changing them replaces what every repository gets', async () => {
+  const { github, of } = fleet('lunch/app', 'lunch/api');
+  const batch = new BatchApply(github, () => undefined);
+  await batch.startWithoutProfile(['lunch/app', 'lunch/api']);
+  await batch.editor.value?.set(setting('repository.has_wiki'), false);
+  await batch.review();
+  expect(batch.canEdit.value).toBe(true);
+
+  await batch.backToEdits();
+  expect(batch.state.value).toMatchObject({ kind: 'editing', repositories: ['lunch/app', 'lunch/api'] });
+  await batch.editor.value?.set(setting('repository.has_wiki'), undefined);
+  await batch.editor.value?.set(setting('repository.has_issues'), false);
+  await batch.review();
+
+  expect(oneOffRows(batch)).toEqual([
+    'lunch/app: repository.has_issues (one-off)',
+    'lunch/api: repository.has_issues (one-off)',
+  ]);
+  await batch.apply();
+  expect(of('lunch/app').state.repository).toMatchObject({ has_wiki: true, has_issues: false });
+});
+
+test('an edit that is not valid keeps the batch on its edits, and leaving discards edits and batch alike', async () => {
+  const { github } = fleet('lunch/app', 'lunch/api');
+  const batch = new BatchApply(github, () => undefined);
+  await batch.startWithoutProfile(['lunch/app', 'lunch/api']);
+  const editor = batch.editor.value;
+  await editor?.type(setting('repository.default_branch'), 'main dev');
+  expect(editor?.canSave.value).toBe(false);
+
+  await batch.review();
+  expect(batch.state.value).toMatchObject({ kind: 'editing' });
+
+  await batch.close();
+  expect(batch.state.value).toEqual({ kind: 'idle' });
+  expect(batch.editor.value).toBeUndefined();
+  expect(await pending()).toEqual([]);
+});
+
+test('a batch of a profile has no edits to go back to', async () => {
+  await saved();
+  const { github } = fleet('lunch/app');
+  const batch = new BatchApply(github, () => undefined);
+  await batch.start(['lunch/app'], profile);
+
+  expect(batch.canEdit.value).toBe(false);
+  await batch.backToEdits();
+  expect(batch.state.value).toMatchObject({ kind: 'reviewed' });
 });

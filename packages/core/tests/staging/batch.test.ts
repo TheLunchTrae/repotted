@@ -13,6 +13,7 @@ import {
   applyBatch,
   batchManifest,
   batchMemberFile,
+  copyEditsEverywhere,
   createBatch,
   discardBatch,
   discardBatchMember,
@@ -412,6 +413,52 @@ describe('editing a batch', () => {
     await expect(editEverywhere(folder, 'repository.has_projects', true)).rejects.toThrow(/sets what it names/u);
     await expect(editEverywhere(folder, 'nothing', true)).rejects.toThrow(/names no section/u);
     await expect(editEverywhere(folder, 'repository.has_wiki', false)).rejects.toThrow(/No repository .* excludes/u);
+  });
+
+  test('copies one set of one-off edits into every member, replacing what each had and keeping its own exclusions', async () => {
+    const { root, profile, folder } = await freshFolderWithProfile();
+    await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profiles: [profile] });
+    const app = await batchMemberFile(folder, 'lunch/app');
+    const web = await batchMemberFile(folder, 'lunch/web');
+    await editStagedApply(app, [{ path: ['merge', 'allow_rebase_merge'], value: false }]);
+    await editStagedApply(web, [{ exclude: 'repository.has_issues', excluded: true }]);
+    const edits = path.join(root, 'edits.yaml');
+    await createStagedApply(edits, 'lunch/app', []);
+    await editStagedApply(edits, [
+      { path: ['repository', 'has_wiki'], value: true },
+      { list: 'labels', name: 'triage', entry: { name: 'triage', color: 'ededed' } },
+    ]);
+
+    expect(await copyEditsEverywhere(folder, edits)).toMatchObject({
+      changed: ['lunch/app', 'lunch/web'],
+      refused: [],
+    });
+
+    const copied = await resolveStagedApply(app);
+    expect(copied.repository).toBe('lunch/app');
+    expect(copied.profile.merge).toBeUndefined();
+    expect(copied.profile.repository).toEqual({ has_wiki: true, has_issues: false });
+    expect(copied.profile.labels).toEqual([{ name: 'triage', color: 'ededed' }]);
+    const kept = await resolveStagedApply(web);
+    expect(kept.exclude).toEqual(['repository.has_issues']);
+    expect(kept.profile.repository).toEqual({ has_wiki: true });
+  });
+
+  test('a member that refuses the copied edits keeps its own and is named', async () => {
+    const { root, profile, folder } = await freshFolderWithProfile();
+    await createBatch(folder, { repositories: ['lunch/app', 'lunch/web'], profiles: [profile] });
+    const web = await batchMemberFile(folder, 'lunch/web');
+    await editStagedApply(web, [{ exclude: 'repository.has_wiki', excluded: true }]);
+    const edits = path.join(root, 'edits.yaml');
+    await createStagedApply(edits, 'lunch/app', []);
+    await editStagedApply(edits, [{ path: ['repository', 'has_wiki'], value: true }]);
+
+    const result = await copyEditsEverywhere(folder, edits);
+
+    expect(result.changed).toEqual(['lunch/app']);
+    expect(result.refused.map((item) => item.repository)).toEqual(['lunch/web']);
+    expect(result.refused[0]?.message).toMatch(/both excluded and edited/u);
+    expect((await resolveStagedApply(web)).profile.repository).toEqual({ has_issues: false });
   });
 
   test('says so when every member already excludes a value', async () => {

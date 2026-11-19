@@ -64,7 +64,7 @@ interface Target {
 }
 
 /** An apply's one-off edits are read, previewed, and written as its staged apply, which holds no drafts. */
-const stagedStore: EditorStore = {
+export const stagedStore: EditorStore = {
   canHoldDrafts: false,
   resolve: resolveStagedApply,
   preview: previewStagedApply,

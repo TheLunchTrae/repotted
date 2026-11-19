@@ -3,7 +3,9 @@ import {
   applyBatch,
   type AuthoritativeSection,
   type BatchPlan,
+  copyEditsEverywhere,
   createBatch,
+  createStagedApply,
   describeSkipped,
   describeWarning,
   discardBatchMember,
@@ -18,9 +20,10 @@ import {
   resolveStagedApply,
 } from '@repotted/core';
 
-import { rm } from '../../engine/files.js';
+import { mkdir, rm } from '../../engine/files.js';
 import { basename, dirname } from '../../engine/path.js';
 import { isSignedOut } from '../account/account.js';
+import { ProfileEditor } from '../profile-editor/profile-editor.js';
 import {
   assignmentKey,
   assignmentSource,
@@ -30,6 +33,7 @@ import {
 } from '../repositories/assignment-review.js';
 import { profileName, profileVersion } from '../repositories/repository-profiles.js';
 import type { AppliedVersion } from '../repositories/saved-assignments.js';
+import { stagedStore } from './apply.js';
 import { type ComparedProfile, type CompareSection, compareSections, exclusionLabel } from './comparison.js';
 
 export interface BatchMemberView {
@@ -58,6 +62,11 @@ interface Named {
 
 export type BatchState =
   | { readonly kind: 'idle' }
+  | ({
+      readonly kind: 'editing';
+      /** The one-off edits every repository gets, this once. */
+      readonly repositories: readonly string[];
+    } & Named)
   | ({
       readonly kind: 'reviewing';
       /** The review this one replaces, which stays in view while it runs; none on the first. */
@@ -210,6 +219,8 @@ function membersOf(plan: BatchPlan, assignments: ProfileAssignments | undefined)
  */
 export class BatchApply {
   readonly state = signal<BatchState>({ kind: 'idle' });
+  /** Only for a batch that changes settings once, without a profile: the edits each repository gets. */
+  readonly editor = signal<ProfileEditor | undefined>(undefined);
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
@@ -219,6 +230,11 @@ export class BatchApply {
   #turn = 0;
   #folder: string | undefined;
   #assigned = new Map<string, string>();
+  /**
+   * The staged apply that holds a batch's one-off edits, beside the batch,
+   * copied into every repository's own before each review.
+   */
+  #edits: string | undefined;
 
   constructor(
     github: GitHub,
@@ -299,6 +315,94 @@ export class BatchApply {
     );
   }
 
+  /**
+   * Each repository starts from what it has, and every one gets the same
+   * one-off edits, which open first. Nothing is recorded on the repositories.
+   */
+  async startWithoutProfile(repositories: readonly string[]): Promise<void> {
+    const [first] = repositories;
+    if (this.#writing() || first === undefined) {
+      return;
+    }
+    const closing = this.close();
+    this.addToRepositoryProfiles.value = true;
+    this.#assigned = new Map();
+    const folder = `/apply/${crypto.randomUUID()}/batch`;
+    const edits = `${dirname(folder)}/edits.yaml`;
+    this.#folder = folder;
+    this.#edits = edits;
+    await this.#work('', [], async (_folder, current) => {
+      await closing;
+      const batch = await createBatch(folder, { profiles: [], repositories });
+      await mkdir(dirname(edits), { recursive: true });
+      // Only the edits are read from it: it is never planned, so the repository it names is any of the batch's.
+      await createStagedApply(edits, first, []);
+      const editor = new ProfileEditor(edits, undefined, stagedStore);
+      await editor.load();
+      if (!current()) {
+        return { kind: 'idle' };
+      }
+      this.editor.value = editor;
+      return { kind: 'editing', profileName: '', repositories: batch.members.map((member) => member.repository) };
+    });
+  }
+
+  /**
+   * Edits that aren't saved are saved first, and then copied into every
+   * repository's apply. It stays on the edits while one isn't valid.
+   */
+  async review(): Promise<void> {
+    const state = this.state.value;
+    const edits = this.#edits;
+    // The page may have moved on while the edits were saved, and then there is nothing here to review.
+    if (state.kind !== 'editing' || edits === undefined || !(await this.#saveEdits()) || this.state.value !== state) {
+      return;
+    }
+    await this.#work(state.profileName, [], async (folder) => {
+      const { refused } = await copyEditsEverywhere(folder, edits);
+      return this.#review(
+        folder,
+        refused.map((item) => `${item.repository}: ${cleaned(item.message)}`),
+      );
+    });
+  }
+
+  /** For a batch that changes settings once, as long as it holds repositories. */
+  readonly canEdit = computed(() => {
+    const state = this.state.value;
+    return (
+      this.editor.value !== undefined &&
+      (state.kind === 'reviewed' ||
+        (state.kind === 'failed' && state.hasBatchToReviewAgain) ||
+        (state.kind === 'applied' && state.left > 0))
+    );
+  });
+
+  async backToEdits(): Promise<void> {
+    const state = this.state.value;
+    if (this.canEdit.value && 'profileName' in state) {
+      await this.#work(state.profileName, [], async (folder) => ({
+        kind: 'editing',
+        profileName: state.profileName,
+        repositories: (await readBatch(folder)).members.map((member) => member.repository),
+      }));
+    }
+  }
+
+  /** Says whether nothing is left unsaved. */
+  async #saveEdits(): Promise<boolean> {
+    const editor = this.editor.value;
+    if (editor === undefined || !editor.dirty.value) {
+      return true;
+    }
+    if (!editor.canSave.value) {
+      return false;
+    }
+    await editor.save((work) => work());
+    // Read afresh: the save has changed them since they were looked at above.
+    return !editor.dirty.peek() && editor.saveError.peek() === undefined;
+  }
+
   async #start(
     profileName: string,
     profiles: readonly string[],
@@ -373,6 +477,8 @@ export class BatchApply {
         const { batch } = await discardBatchMember(folder, repository);
         if (batch === null) {
           await rm(dirname(folder), { recursive: true, force: true });
+          this.#edits = undefined;
+          this.editor.value = undefined;
           return { kind: 'idle' };
         }
         return this.#review(folder, []);
@@ -539,6 +645,8 @@ export class BatchApply {
     this.#turn += 1;
     const folder = this.#folder;
     this.#folder = undefined;
+    this.#edits = undefined;
+    this.editor.value = undefined;
     this.#assigned = new Map();
     this.state.value = { kind: 'idle' };
     if (folder !== undefined) {
@@ -642,7 +750,7 @@ export class BatchApply {
   async #work(
     profile: string,
     members: readonly BatchMemberView[],
-    work: (folder: string) => Promise<BatchState>,
+    work: (folder: string, current: () => boolean) => Promise<BatchState>,
   ): Promise<void> {
     const folder = this.#folder;
     if (folder === undefined) {
@@ -651,7 +759,7 @@ export class BatchApply {
     const turn = (this.#turn += 1);
     this.state.value = { kind: 'reviewing', profileName: profile, members };
     try {
-      const next = await work(folder);
+      const next = await work(folder, () => turn === this.#turn);
       if (turn === this.#turn) {
         this.state.value = next;
       }

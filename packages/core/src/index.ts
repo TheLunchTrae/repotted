@@ -67,6 +67,7 @@ export {
   applyBatch,
   batchMemberFile,
   chosenMembers,
+  copyEditsEverywhere,
   createBatch,
   discardBatch,
   discardBatchMember,
