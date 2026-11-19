@@ -1042,9 +1042,12 @@ lasts as long as the tab.
 
 The engine plans a repository again before it writes. An entry that never
 began is written with `applyPlan`, only when the new plan is exactly the
-reviewed one. An entry that began before, because its tab closed or it is
-tried again, is written with `resumeApply`: only what is left, and only when
-every change of the new plan is one the review listed. While the page that
+reviewed one. An entry that began before is written with `resumeApply`: only
+what is left, and only when every change of the new plan is one the review
+listed. An entry has begun when a write of it failed partway, or when its
+tab closed after its turn came: the tab can't say whether a write landed, so
+the entry is marked as begun before GitHub is asked for anything, and the
+mark is taken back when a try ends having written nothing. While the page that
 added an entry waits for it, the engine reads the plan's files again, as
 [Plan and apply](#plan-and-apply) describes; after a reload those files are
 gone, and the entry's own copy of the reviewed setup is planned.
@@ -1056,19 +1059,19 @@ gone, and the entry's own copy of the reviewed setup is planned.
 | Writing         | The new plan matches by the entry's rule, and the repository's profiles are as reviewed                                                      | Its changes are written, and the entry is gone from the queue. What it records on the repository's profiles is saved, and its file is removed after that, so an entry cut off before then records again. |
 | Writing         | The new plan doesn't match, the repository's profiles changed, GitHub refuses a change, or a request fails, while a page waits for the entry | Gone. The page says what happened, as [Web apply](#web-apply) and [Web batch apply](#web-batch-apply) describe, and holds what a new review needs.                                                       |
 | Writing         | The new plan doesn't match, and no page waits                                                                                                | Stale, kept with why. Nothing is written, or nothing more for an entry that began before.                                                                                                                |
-| Writing         | The repository's profiles changed, GitHub refuses a change, or a request fails, and no page waits                                            | Failed, kept with why and how many changes stay written.                                                                                                                                                 |
+| Writing         | The repository's profiles changed, GitHub refuses a change, or a request fails, and no page waits                                            | Failed, kept with why and how many changes stay written. It has begun only when a change was refused partway.                                                                                            |
 | Writing         | A change that was half written when the entry was cut off, such as an autolink remade as a delete and a create                               | Stale: the change that is left reads as one the review didn't list.                                                                                                                                      |
-| Writing         | GitHub answers 401                                                                                                                           | Held, with every entry still to write. The account is signed out, once, and the pages that wait are told.                                                                                                |
+| Writing         | GitHub answers 401                                                                                                                           | Held, with every entry still to write, and kept as held, so the next sign-in writes nothing until it is asked. The account is signed out, once, and the pages that wait are told.                        |
 | Writing         | The tab closes or reloads                                                                                                                    | The file stays, marked as begun, for the next opening.                                                                                                                                                   |
 | Writing         | The last entry ends                                                                                                                          | Idle. Entries no page waited for are confirmed once, by how many repositories were applied.                                                                                                              |
 | Opening         | A file can't be read, or is another account's                                                                                                | Removed, and never run.                                                                                                                                                                                  |
-| Opening         | The oldest entry still to write was queued within 60 minutes                                                                                 | Waiting: the queue carries on by itself.                                                                                                                                                                 |
+| Opening         | The oldest entry still to write was queued within 60 minutes                                                                                 | Waiting: the queue carries on by itself. An entry kept as held stays Held.                                                                                                                               |
 | Opening         | The oldest entry still to write was queued more than 60 minutes ago, or the clock is earlier than when it was queued                         | Held, every one of them. Nothing is written, and the header offers **Continue with N changes**.                                                                                                          |
 | Held            | **Continue**                                                                                                                                 | Waiting.                                                                                                                                                                                                 |
 | Held            | **Discard**                                                                                                                                  | Gone, with the repositories as they are.                                                                                                                                                                 |
 | Stale or Failed | **Dismiss**                                                                                                                                  | Gone, with the repository as it is.                                                                                                                                                                      |
-| Failed          | **Try again**                                                                                                                                | Waiting, as an entry that began before.                                                                                                                                                                  |
-| Any but Writing | Sign out                                                                                                                                     | Gone. Sign-out waits while an entry is Writing, as [Web account](#web-account) describes.                                                                                                                |
+| Failed          | **Try again**                                                                                                                                | Waiting, by the rule for whether it has begun.                                                                                                                                                           |
+| Any but Writing | Sign out                                                                                                                                     | Gone, and a page that waits is told. Sign-out waits while an entry is Writing, as [Web account](#web-account) describes, and checks again after its question about unsaved changes.                      |
 
 ## Web new profile
 
@@ -1239,17 +1242,19 @@ changes. Sources include profile files, definition files, staged applies, and
 inline YAML with its reference directory. Plans without source metadata use
 their saved desired profile.
 
-| State    | Event                                                                              | Next                                                                                    |
-| -------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Planning | A setting needs another planned write                                              | The prerequisite precedes it in the reviewed changes; nested dependencies are followed. |
-| Planning | Code scanning or code quality setup needs disabled or unreadable unmanaged Actions | Configuration is skipped with a warning; Actions stays unmanaged.                       |
-| Planning | Code scanning or code quality setup turns off                                      | Its shutdown precedes an Actions change and does not depend on enabling Actions.        |
-| Reviewed | New live entries appear in an owned section                                        | Stale before any write; new pruning requires a fresh review.                            |
-| Reviewed | A source or reference cannot resolve                                               | Refused before any write; repair the source and review a fresh plan.                    |
-| Reviewed | The new plan differs                                                               | Stale: `StalePlanError` carries the current plan, and nothing is written.               |
-| Reviewed | The new plan matches                                                               | Writing, change by change, from the new plan's requests.                                |
-| Writing  | A request fails                                                                    | Partly applied: `ApplyError` lists the changes already made and the one that failed.    |
-| Writing  | Every request succeeds                                                             | Applied.                                                                                |
+| State          | Event                                                                                         | Next                                                                                    |
+| -------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Planning       | A setting needs another planned write                                                         | The prerequisite precedes it in the reviewed changes; nested dependencies are followed. |
+| Planning       | Code scanning or code quality setup needs disabled or unreadable unmanaged Actions            | Configuration is skipped with a warning; Actions stays unmanaged.                       |
+| Planning       | Code scanning or code quality setup turns off                                                 | Its shutdown precedes an Actions change and does not depend on enabling Actions.        |
+| Reviewed       | New live entries appear in an owned section                                                   | Stale before any write; new pruning requires a fresh review.                            |
+| Reviewed       | A source or reference cannot resolve                                                          | Refused before any write; repair the source and review a fresh plan.                    |
+| Reviewed       | The new plan differs                                                                          | Stale: `StalePlanError` carries the current plan, and nothing is written.               |
+| Reviewed       | The new plan matches                                                                          | Writing, change by change, from the new plan's requests.                                |
+| Writing        | A request fails                                                                               | Partly applied: `ApplyError` lists the changes already made and the one that failed.    |
+| Writing        | Every request succeeds                                                                        | Applied.                                                                                |
+| Partly applied | `resumeApply` finds every change of the new plan in the reviewed plan, whole                  | Writing, with only those changes, from the new plan's requests.                         |
+| Partly applied | `resumeApply` finds a change the reviewed plan doesn't list, or other ownership or exclusions | Stale: `StalePlanError` carries the current plan, and nothing more is written.          |
 
 Partly applied is a state of the repository, not of the plan: nothing rolls
 back the changes already made. Planning again from the same profile lists

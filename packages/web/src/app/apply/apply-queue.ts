@@ -53,7 +53,13 @@ const savedEntry = z.object({
   repository: z.string(),
   profileName: z.string(),
   plan: z.unknown(),
+  /**
+   * Whether a write of it may have landed: set before GitHub is asked for anything, and taken back when a try
+   * ends having written nothing. A tab that closes in between can't say, so the entry then counts as begun.
+   */
   hasBegun: z.boolean(),
+  /** Waits to be asked for, as after GitHub refused the sign-in. An entry too old when the app opens waits too. */
+  held: z.optional(z.boolean()),
   assignmentKey: z.optional(z.string()),
   record: z.optional(savedRecord),
   problem: z.optional(savedProblem),
@@ -62,7 +68,6 @@ const savedEntry = z.object({
 interface Entry extends Omit<z.infer<typeof savedEntry>, 'plan'> {
   readonly id: string;
   readonly plan: Plan;
-  /** Too old when the app opened, so it waits to be asked for. Never kept: it is decided at each opening. */
   readonly held: boolean;
 }
 
@@ -150,6 +155,8 @@ export class ApplyQueue {
   readonly #finished = signal(0);
   readonly #running = signal(false);
   readonly #waiters = new Map<string, Waiter>();
+  /** Written, with files that stay until what they record is saved. */
+  readonly #recording = new Set<string>();
   #finishedWithoutWaiter = 0;
   #added = 0;
 
@@ -211,7 +218,7 @@ export class ApplyQueue {
     for (const name of names) {
       const id = name.replace(/\.json$/u, '');
       // One added since the app opened is in the queue already.
-      if (this.#entries.value.some((entry) => entry.id === id)) {
+      if (this.#recording.has(id) || this.#entries.value.some((entry) => entry.id === id)) {
         continue;
       }
       const entry = await this.#read(id);
@@ -227,7 +234,7 @@ export class ApplyQueue {
     // A clock set back since leaves an age that says nothing, so that asks too.
     const held = waiting.length > 0 && (age < 0 || age > resumeWindowMs);
     this.#entries.value = [
-      ...kept.map((entry) => ({ ...entry, held: held && entry.problem === undefined })),
+      ...kept.map((entry) => ({ ...entry, held: (held || entry.held) && entry.problem === undefined })),
       ...this.#entries.value,
     ].toSorted((left, right) => left.position - right.position);
     this.#run();
@@ -237,7 +244,7 @@ export class ApplyQueue {
     try {
       const saved = savedEntry.parse(JSON.parse(await readFile(fileOf(id), 'utf8')));
       return saved.account === this.#options.account
-        ? { ...saved, id, plan: parsePlan(saved.plan), held: false }
+        ? { ...saved, id, plan: parsePlan(saved.plan), held: saved.held === true }
         : undefined;
     } catch {
       return undefined;
@@ -294,9 +301,11 @@ export class ApplyQueue {
     return outcome;
   }
 
-  continueHeld(): void {
+  async continueHeld(): Promise<void> {
+    const held = this.#entries.value.filter((entry) => entry.held);
     this.#entries.value = this.#entries.value.map((entry) => ({ ...entry, held: false }));
     this.#run();
+    await Promise.all(held.map((entry) => this.#keepIfQueued(entry.id)));
   }
 
   async discardHeld(): Promise<void> {
@@ -325,6 +334,10 @@ export class ApplyQueue {
 
   async #remove(entries: readonly Entry[]): Promise<void> {
     this.#entries.value = this.#entries.value.filter((entry) => !entries.includes(entry));
+    for (const entry of entries) {
+      this.#waiters.get(entry.id)?.reject(new Error('The apply was discarded before it was written.'));
+      this.#waiters.delete(entry.id);
+    }
     await Promise.all(entries.map((entry) => rm(fileOf(entry.id), { force: true })));
   }
 
@@ -333,8 +346,16 @@ export class ApplyQueue {
     await this.#keep(entry);
   }
 
+  /** Keeps the entry as the queue has it now, unless it has left the queue meanwhile. */
+  async #keepIfQueued(id: string): Promise<void> {
+    const entry = this.#entries.value.find((other) => other.id === id);
+    if (entry !== undefined) {
+      await this.#keep(entry);
+    }
+  }
+
   async #keep(entry: Entry): Promise<void> {
-    const { id: _id, held: _held, ...saved } = entry;
+    const { id: _id, ...saved } = entry;
     await mkdir(applyQueueFolder, { recursive: true });
     await writeFile(fileOf(entry.id), JSON.stringify(saved));
   }
@@ -392,21 +413,30 @@ export class ApplyQueue {
         }
       });
       const recorded = this.#record(entry);
+      this.#recording.add(entry.id);
       this.#entries.value = this.#entries.value.filter((other) => other.id !== entry.id);
       this.#finished.value += 1;
       // The file goes once the record is saved, so an entry cut off before then records again.
-      recorded.then(() => rm(fileOf(entry.id), { force: true })).catch(() => undefined);
+      recorded
+        .then(() => rm(fileOf(entry.id), { force: true }))
+        .catch(() => undefined)
+        .finally(() => {
+          this.#recording.delete(entry.id);
+        });
       if (waiter === undefined) {
         this.#finishedWithoutWaiter += 1;
       } else {
         waiter.resolve({ applied, recorded });
       }
     } catch (error) {
+      // Only a write that failed partway can have left something written by this try.
+      const hasBegun = entry.hasBegun || error instanceof ApplyError;
       if (isSignedOut(error) || (error instanceof ApplyError && isSignedOut(error.cause))) {
-        // What is left stays queued, and waits to be asked for once GitHub accepts a sign-in again.
+        // What is left stays queued, and is kept as waiting to be asked for, so the next sign-in doesn't write it unasked.
+        const left = this.#entries.value.filter((other) => other.problem === undefined);
         this.#entries.value = this.#entries.value.map((other) =>
           other.problem === undefined
-            ? { ...other, hasBegun: other.hasBegun || other.id === entry.id, held: true }
+            ? { ...other, hasBegun: other.id === entry.id ? hasBegun : other.hasBegun, held: true }
             : other,
         );
         this.#options.onSignedOut();
@@ -415,10 +445,11 @@ export class ApplyQueue {
           other.reject(error);
         }
         this.#waiters.clear();
+        await Promise.all(left.map((other) => this.#keepIfQueued(other.id))).catch(() => undefined);
         return;
       }
       if (waiter === undefined) {
-        await this.#replace({ ...entry, hasBegun: true, problem: problemOf(entry, error) });
+        await this.#replace({ ...entry, hasBegun, problem: problemOf(entry, error) });
       } else {
         // The page that waits says what happened, and holds what is needed to review again.
         await this.#remove(this.#entries.value.filter((other) => other.id === entry.id));

@@ -403,8 +403,9 @@ then, so the new plan can't be the reviewed one. It plans again and writes
 only when every change of the new plan is one the reviewed plan lists,
 compared whole, and the ownership and exclusions are the reviewed ones. Any
 other change gives a `StalePlanError` and no writes, so it still writes
-nothing a review didn't list. A caller uses it only for a plan it knows began
-to apply; a plan that never began keeps `applyPlan`'s exact comparison.
+nothing a review didn't list. A caller uses it only for a plan that may have
+begun to apply; a plan known not to have begun keeps `applyPlan`'s exact
+comparison.
 
 Keep these properties when you change the plan format or the engine; see the
 Safety section of [AGENTS.md](../../AGENTS.md).

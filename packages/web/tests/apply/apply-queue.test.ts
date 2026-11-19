@@ -194,7 +194,7 @@ test('after an hour nothing is written until it is continued', async () => {
   expect(queue.running.value).toBe(false);
   expect([...writes(app), ...writes(api)]).toEqual([]);
 
-  queue.continueHeld();
+  await queue.continueHeld();
 
   await vi.waitFor(() => {
     expect(applied).toEqual([2]);
@@ -298,6 +298,63 @@ test('a lost sign-in stops the queue once, and what is left stays kept and waits
   expect(statuses(queue)).toEqual(['lunch/app held', 'lunch/api held']);
   expect(await keptFiles()).toHaveLength(2);
   expect(writes(api)).toEqual([]);
+
+  // The next sign-in, minutes later, opens the app afresh, and still writes nothing unasked.
+  const requestsBefore = [...writes(app), ...writes(api)];
+  const next = queueFor(fleet, { now: () => queuedAt + 5 * minute });
+  await vi.waitFor(async () => {
+    await next.queue.load();
+    expect(statuses(next.queue)).toEqual(['lunch/app held', 'lunch/api held']);
+  });
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+  expect([...writes(app), ...writes(api)]).toEqual(requestsBefore);
+
+  // An apply of one of them reviewed since replaces the one that waits.
+  const fresh = next.queue.add(await requestFor(api));
+  expect(statuses(next.queue)).toEqual(['lunch/app held', 'lunch/api waiting']);
+  expect((await fresh).applied).toHaveLength(2);
+  expect(writes(app)).toEqual(requestsBefore);
+});
+
+test('a try that fails before it writes leaves the entry as never begun, so trying again still needs the reviewed plan exactly', async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  const api = new FakeGitHub({}, 'lunch/api');
+  const fleet = await closedTab([app, api], 0);
+  api.fail(/^GET /u, new Error('Failed to fetch'), 1);
+
+  const { queue } = queueFor(fleet);
+  await queue.load();
+  await vi.waitFor(() => {
+    expect(statuses(queue)).toEqual(['lunch/api failed']);
+  });
+  expect(writes(api)).toEqual([]);
+  api.state.repository['has_wiki'] = false;
+
+  await queue.tryAgain(queue.applies.value[0]?.id ?? '');
+
+  await vi.waitFor(() => {
+    expect(statuses(queue)).toEqual(['lunch/api stale']);
+  });
+  expect(writes(api)).toEqual([]);
+});
+
+test("nothing is written until the repositories' profiles are read", async () => {
+  const app = new FakeGitHub({}, 'lunch/app');
+  const loaded = Promise.withResolvers<undefined>();
+  const { queue } = queueFor(app, { assignmentsLoaded: loaded.promise });
+  const request = await requestFor(app);
+  const readsToPlan = app.calls.length;
+
+  const outcome = queue.add(request);
+  await vi.waitFor(() => {
+    expect(queue.running.value).toBe(true);
+  });
+  expect(app.calls).toHaveLength(readsToPlan);
+  loaded.resolve(undefined);
+
+  expect((await outcome).applied).toHaveLength(2);
 });
 
 test('an apply finished after a reload records it, and one whose repository profiles changed since is refused', async () => {

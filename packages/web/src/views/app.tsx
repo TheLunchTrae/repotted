@@ -237,6 +237,12 @@ function SignedIn({
   const [signOutBlockedWhileApplyWrites, setSignOutBlockedWhileApplyWrites] = useState(false);
   // The queue is the account's, so what it still holds goes with the sign-in.
   const leave = (): void => {
+    // Asked again here: the queue may have started while the question about unsaved changes was open.
+    if (queue.running.value) {
+      setLeaving(false);
+      setSignOutBlockedWhileApplyWrites(true);
+      return;
+    }
     run(Promise.all([apply.close(), batch.close(), queue.discardAll()]).then(() => account.signOut()));
   };
   const writing = queue.running.value;

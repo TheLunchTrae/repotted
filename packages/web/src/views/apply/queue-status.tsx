@@ -27,10 +27,13 @@ function QueuedRow({
   apply,
   queue,
   router,
+  onAct,
 }: {
   readonly apply: QueuedApply;
   readonly queue: ApplyQueue;
   readonly router: Router;
+  /** Before a button that goes away with what it does. */
+  readonly onAct: () => void;
 }): JSX.Element {
   const hasProblem = apply.status === 'stale' || apply.status === 'failed';
   return (
@@ -53,6 +56,7 @@ function QueuedRow({
               type="button"
               aria-label={`Try again: ${apply.repository}`}
               onClick={() => {
+                onAct();
                 run(queue.tryAgain(apply.id));
               }}
             >
@@ -67,6 +71,7 @@ function QueuedRow({
             type="button"
             aria-label={`Dismiss: ${apply.repository}`}
             onClick={() => {
+              onAct();
               run(queue.dismiss(apply.id));
             }}
           >
@@ -96,24 +101,45 @@ export function QueueStatus({ queue, router }: QueueStatusProps): JSX.Element | 
   const progress = queue.progress.value;
   const held = queue.held.value;
   const problems = applies.filter((apply) => apply.status === 'stale' || apply.status === 'failed').length;
-  const heldLabel =
+  const heldAmount =
     held === undefined
-      ? undefined
-      : `Continue with ${held.changes > 0 ? changesOf(held.changes) : count(held.repositories, 'repository', 'repositories')}`;
-  const notFinished = count(problems, 'apply not finished', 'applies not finished');
-  const step = progress === undefined ? '' : `${Math.min(progress.finished + 1, progress.total)} of ${progress.total}`;
-  const summary = progress !== undefined ? `Applying ${step}` : (heldLabel ?? notFinished);
-  const shortSummary =
-    progress !== undefined ? step : heldLabel === undefined ? `${problems} not finished` : 'Continue';
+      ? ''
+      : held.changes > 0
+        ? changesOf(held.changes)
+        : count(held.repositories, 'repository', 'repositories');
+  // Each part with whether a small phone hides it, where it is still read aloud.
+  const summary: readonly (readonly [text: string, hiddenWhenNarrow: boolean])[] =
+    progress !== undefined
+      ? [
+          ['Applying ', true],
+          [`${Math.min(progress.finished + 1, progress.total)} of ${progress.total}`, false],
+        ]
+      : held !== undefined
+        ? [
+            ['Continue', false],
+            [` with ${heldAmount}`, true],
+          ]
+        : [
+            [String(problems), false],
+            [problems === 1 ? ' apply' : ' applies', true],
+            [' not finished', false],
+          ];
   // Said once for each turn the queue takes, not for each repository it finishes.
   const announcement =
     progress !== undefined
       ? 'Applying changes to GitHub.'
       : held !== undefined
-        ? `${changesOf(held.changes)} queued earlier. Nothing is written until you continue.`
+        ? `${heldAmount} queued earlier. Nothing is written until you continue.`
         : problems > 0
-          ? `${notFinished}.`
+          ? `${count(problems, 'apply', 'applies')} not finished.`
           : '';
+  // A button that goes away with what it does would take the keyboard's place with it, so the card's own button takes it first.
+  const closePanel = (): void => {
+    if (menu.current !== null) {
+      menu.current.open = false;
+      menu.current.querySelector('summary')?.focus();
+    }
+  };
   return (
     <>
       <p class="visually-hidden" role="status">
@@ -123,10 +149,15 @@ export function QueueStatus({ queue, router }: QueueStatusProps): JSX.Element | 
         <details class="menu queue-menu" ref={menu}>
           <summary
             class={`button button-small${progress === undefined && held !== undefined ? ' button-primary' : ''}`}
-            aria-label={narrow ? summary : undefined}
           >
             {progress !== undefined && <Spinner />}
-            {narrow ? shortSummary : summary}
+            <span>
+              {summary.map(([text, hiddenWhenNarrow]) => (
+                <span key={text} class={narrow && hiddenWhenNarrow ? 'visually-hidden' : undefined}>
+                  {text}
+                </span>
+              ))}
+            </span>
           </summary>
           <div
             class="menu-panel menu-panel-end queue-panel"
@@ -165,7 +196,8 @@ export function QueueStatus({ queue, router }: QueueStatusProps): JSX.Element | 
                     class="button button-primary button-small"
                     type="button"
                     onClick={() => {
-                      queue.continueHeld();
+                      closePanel();
+                      run(queue.continueHeld());
                     }}
                   >
                     Continue
@@ -174,6 +206,7 @@ export function QueueStatus({ queue, router }: QueueStatusProps): JSX.Element | 
                     class="button button-quiet button-small"
                     type="button"
                     onClick={() => {
+                      closePanel();
                       run(queue.discardHeld());
                     }}
                   >
@@ -184,7 +217,7 @@ export function QueueStatus({ queue, router }: QueueStatusProps): JSX.Element | 
             )}
             <ul class="queue-list">
               {applies.map((apply) => (
-                <QueuedRow key={apply.id} apply={apply} queue={queue} router={router} />
+                <QueuedRow key={apply.id} apply={apply} queue={queue} router={router} onAct={closePanel} />
               ))}
             </ul>
           </div>
