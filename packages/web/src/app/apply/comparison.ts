@@ -300,6 +300,23 @@ export function reviewNote({
   return `Skipped ${where}: ${reason}`;
 }
 
+/** A review note, with the setting or entry it names, by section and profile key, for one that names one. */
+export interface LinkedReviewNote {
+  readonly text: string;
+  readonly about: { readonly section: string; readonly key: string } | undefined;
+}
+
+export function linkedReviewNote(warning: Warning): LinkedReviewNote {
+  const { section, key, field, cause, exclusion } = warning;
+  return {
+    text: reviewNote(warning),
+    about:
+      exclusion === undefined && cause !== undefined && section !== undefined && key !== undefined
+        ? { section, key: field === undefined ? key : `${key}.${field}` }
+        : undefined,
+  };
+}
+
 /** A draft the plan leaves out, as the review lists it. */
 export function draftNote({ section, target, unset }: Skipped): string {
   const noun = entryNounByList[section];

@@ -2669,6 +2669,68 @@ select.field {
   border-inline-start-color: var(--remove);
 }
 
+.review-note {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
+}
+
+.review-note + .review-note {
+  margin-top: 6px;
+}
+
+/* A place a link went to pulses twice, then fades, so the eye finds it. */
+.landed {
+  position: relative;
+  z-index: 1;
+  border-radius: var(--control-radius);
+  animation: landed 2.4s ease-out;
+}
+
+@keyframes landed {
+  0%,
+  30%,
+  60% {
+    background-color: var(--tint);
+    box-shadow:
+      0 0 0 3px var(--rail),
+      0 0 0 9px color-mix(in srgb, var(--rail) 22%, transparent);
+  }
+
+  15%,
+  45% {
+    background-color: var(--tint);
+    box-shadow:
+      0 0 0 3px var(--rail),
+      0 0 0 3px transparent;
+  }
+
+  100% {
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 0 transparent;
+  }
+}
+
+/* Without motion, the mark holds still and then goes at once. */
+@keyframes landed-still {
+  from {
+    background-color: var(--tint);
+    box-shadow: 0 0 0 3px var(--rail);
+  }
+
+  to {
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landed {
+    animation: landed-still 2.4s steps(1, end);
+  }
+}
+
 .hidden-note {
   color: var(--remove);
 }

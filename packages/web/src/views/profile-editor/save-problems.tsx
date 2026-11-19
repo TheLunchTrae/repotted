@@ -1,13 +1,18 @@
 import type { JSX } from 'preact';
 import { useId, useRef, useState } from 'preact/hooks';
 
-import type { ProfileEditor, SaveProblem } from '../../app/profile-editor/profile-editor.js';
+import {
+  type EditorPlace,
+  placeOfProblem,
+  type ProfileEditor,
+  type SaveProblem,
+} from '../../app/profile-editor/profile-editor.js';
 import { run } from '../layout/run.js';
 import { describeValue } from './describe-value.js';
 
 interface SaveProblemsProps {
   readonly editor: ProfileEditor;
-  readonly onGoTo: (problem: SaveProblem) => void;
+  readonly onGoTo: (place: EditorPlace) => void;
 }
 
 function resetOne(editor: ProfileEditor, problem: SaveProblem): Promise<void> {
@@ -78,7 +83,7 @@ export function SaveProblems({ editor, onGoTo }: SaveProblemsProps): JSX.Element
           {editor.canSaveAsDraft.value && <p class="muted small">Or keep your changes as a draft.</p>}
           <ul class="fix-list">
             {problems.map((problem) => {
-              const hidden = problem.place.kind === 'setting' && problem.place.hiddenWhile !== undefined;
+              const place = placeOfProblem(problem);
               return (
                 <li key={problem.key} class="fix-item">
                   <div class="fix-text">
@@ -91,13 +96,13 @@ export function SaveProblems({ editor, onGoTo }: SaveProblemsProps): JSX.Element
                   </div>
                   {problem.place.kind !== 'profile' && (
                     <div class="fix-actions">
-                      {!hidden && (
+                      {place !== undefined && (
                         <button
                           class="button button-small"
                           type="button"
                           onClick={() => {
                             setOpen(false);
-                            onGoTo(problem);
+                            onGoTo(place);
                           }}
                         >
                           Go to it
@@ -105,7 +110,7 @@ export function SaveProblems({ editor, onGoTo }: SaveProblemsProps): JSX.Element
                       )}
                       {problem.canReset && (
                         <button
-                          class={hidden ? 'button button-small' : 'button button-quiet button-small'}
+                          class={place === undefined ? 'button button-small' : 'button button-quiet button-small'}
                           type="button"
                           aria-label={`Reset ${problem.name}`}
                           onClick={() => {

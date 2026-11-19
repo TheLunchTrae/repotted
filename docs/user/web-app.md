@@ -301,6 +301,9 @@ what it will have after the apply. From there you can:
   shows under **Left out of this apply** with **Put back**.
 - Click **Back to edits** to change the edits again. A change that comes from
   a one-off edit is marked **One-off edit**; change or undo it there.
+- Click **Edit** beside a review note that names a setting or an entry to go
+  back to the edits at it, as **Go to it** does. A setting that another
+  setting hides goes to the one that hides it.
 - Click **Review again** to read the profile and GitHub again.
 
 A change GitHub would refuse says what it needs, as on a comparison.
@@ -612,7 +615,9 @@ its name.
 
 A profile with valid YAML syntax opens in the settings, even if its
 configuration is invalid. Errors appear on the affected fields or areas and
-in the save problems list. Correct the values in the forms, or use **Remove
+in the save problems list. The notice above the settings lists each error by
+the setting or entry it is in, as **Wiki in Repository**, and each name goes
+to that setting, as **Go to it** does. Correct the values in the forms, or use **Remove
 invalid configuration** for a malformed area. Errors in a base profile name
 the file to open. Unknown keys are ignored on load and removed from this file
 when saving. Saving also sets a ruleset bypass actor ID that GitHub ignores,
@@ -649,7 +654,9 @@ tag patterns that git wouldn't take.
 While something holds Save back, the bar says how many things, as **2 things
 to fix**, and each tab with one shows a count. The count opens a list of each
 thing, with where it is and why. **Go to it** opens its tab, or its ruleset,
-environment, or label, and puts you in the box. **Reset** puts that one back,
+environment, or label, and puts you in the box, which pulses twice so you can
+find it. With reduced motion turned on in your system settings, it is
+outlined for a moment instead. **Reset** puts that one back,
 and **Reset all**, with more than one, puts them all back. A setting hidden
 because of the one above it, such as **Open pull requests allowed** with
 **Pull requests** set to **Off**, can't be gone to, so the list offers only

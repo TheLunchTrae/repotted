@@ -1,10 +1,10 @@
 import type { JSX } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Spinner } from '../layout/loading.js';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import type { BatchApply, BatchMemberView } from '../../app/apply/batch-apply.js';
-import { type CompareRow, exclusionLabel, sectionTitles } from '../../app/apply/comparison.js';
+import { type CompareRow, exclusionLabel, type LinkedReviewNote, sectionTitles } from '../../app/apply/comparison.js';
 import type { Router } from '../../app/navigation/router.js';
 import { BarActions } from '../layout/action-bar.js';
 import { useLeaveQuestion } from '../layout/leave-question.js';
@@ -12,6 +12,7 @@ import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
 import { waitingForEarlier } from './apply.js';
+import { ReviewNotes } from './review-notes.js';
 
 const kinds: Readonly<Record<CompareRow['kind'], string>> = { changes: 'Changes', adds: 'Adds', removes: 'Removes' };
 
@@ -34,13 +35,18 @@ function statusOf(member: BatchMemberView): { readonly text: string; readonly to
   }
 }
 
+type About = NonNullable<LinkedReviewNote['about']>;
+
 interface MemberProps {
   readonly member: BatchMemberView;
   readonly batch: BatchApply;
   readonly reviewingOrApplying: boolean;
+  /** Undefined for a batch with no edits to go back to. */
+  readonly onEdit: ((about: About) => void) | undefined;
+  readonly editDisabled: boolean;
 }
 
-function Member({ member, batch, reviewingOrApplying: working }: MemberProps): JSX.Element {
+function Member({ member, batch, reviewingOrApplying: working, onEdit, editDisabled }: MemberProps): JSX.Element {
   const status = statusOf(member);
   const out = member.status === 'left-out';
   return (
@@ -86,11 +92,11 @@ function Member({ member, batch, reviewingOrApplying: working }: MemberProps): J
           Full section ownership: {member.authoritative.map((section) => sectionTitles[section]).join(', ')}.
         </p>
       )}
-      {(member.warnings.length > 0 || member.skippedDrafts.length > 0) && (
+      {member.warnings.length > 0 && (
+        <ReviewNotes class="muted small" notes={member.warnings} onEdit={onEdit} editDisabled={editDisabled} />
+      )}
+      {member.skippedDrafts.length > 0 && (
         <ul class="muted small">
-          {member.warnings.map((warning) => (
-            <li key={warning}>{warning}</li>
-          ))}
           {member.skippedDrafts.map((skipped) => (
             <li key={skipped}>{skipped}</li>
           ))}
@@ -218,6 +224,13 @@ export function BatchPage({ batch, router, earlierApplies }: BatchProps): JSX.El
   const [reviewing, review] = usePendingAction();
   const state = batch.state.value;
   const [confirming, setConfirming] = useState(false);
+  // A review note's Edit goes back to the edits at what it names, as a new object each time, so the same note goes again.
+  const [editing, setEditing] = useState<{ readonly about: About } | undefined>(undefined);
+  const editor = batch.editor.value;
+  const landOn = useMemo(
+    () => (editing === undefined ? undefined : editor?.placeOf(editing.about.section, editing.about.key)),
+    [editing, editor],
+  );
   useLeaveQuestion(router, () => {
     const current = batch.state.peek();
     if (!batch.holdsOneOffEdits.peek()) {
@@ -255,7 +268,6 @@ export function BatchPage({ batch, router, earlierApplies }: BatchProps): JSX.El
   const members = batch.members.value;
   const refused = state.kind === 'reviewed' ? state.refused : [];
   const repositories = (amount: number): string => (amount === 1 ? '1 repository' : `${amount} repositories`);
-  const editor = batch.editor.value;
   const discard = (
     <button
       class="button button-quiet"
@@ -342,6 +354,7 @@ export function BatchPage({ batch, router, earlierApplies }: BatchProps): JSX.El
             key={editor.file}
             name=""
             editor={editor}
+            landOn={landOn}
             ownerTypeHasPushRulesets={editor.ownerType.value !== 'user'}
             saving={{
               save: () => editor.save((work) => work()),
@@ -484,6 +497,15 @@ export function BatchPage({ batch, router, earlierApplies }: BatchProps): JSX.El
                   member={member}
                   batch={batch}
                   reviewingOrApplying={reviewingOrApplying}
+                  editDisabled={reviewingOrApplying || !batch.canEdit.value}
+                  onEdit={
+                    editor === undefined
+                      ? undefined
+                      : (about) => {
+                          setEditing({ about });
+                          run(batch.backToEdits());
+                        }
+                  }
                 />
               ))}
             </div>
@@ -531,6 +553,7 @@ export function BatchPage({ batch, router, earlierApplies }: BatchProps): JSX.El
                       type="button"
                       disabled={reviewingOrApplying || !batch.canEdit.value}
                       onClick={() => {
+                        setEditing(undefined);
                         run(batch.backToEdits());
                       }}
                     >

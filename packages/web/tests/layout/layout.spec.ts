@@ -474,6 +474,64 @@ test('leaving a new profile that has a name asks first, and Leave discards it', 
   await expect(page.getByText('half-made', { exact: true })).toHaveCount(0);
 });
 
+test('a link to an invalid setting, and Go to it, take the keyboard there and mark it', async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('configuration', { exact: true }).click();
+  const wiki = page.getByRole('radiogroup', { name: 'Wiki', exact: true });
+  const wikiSetting = page.locator('.setting').filter({ has: wiki });
+  await page.getByRole('tab', { name: /^Labels/u }).click();
+
+  await page.getByRole('button', { name: 'Wiki in Repository', exact: true }).click();
+  await expect(page.getByRole('tab', { name: /^Repository/u })).toHaveAttribute('aria-selected', 'true');
+  // Its value is no choice, so the first takes the keyboard.
+  await expect(wiki.getByRole('radio', { name: 'On', exact: true })).toBeFocused();
+  await expect(wikiSetting).toHaveClass(/\blanded\b/u);
+  await expect(wikiSetting).not.toHaveClass(/\blanded\b/u, { timeout: 5000 });
+
+  await page.getByRole('tab', { name: /^Labels/u }).click();
+  await page.getByRole('button', { name: /things to fix/u }).click();
+  await page.getByRole('button', { name: 'Go to it', exact: true }).first().click();
+  await expect(wiki.getByRole('radio', { name: 'On', exact: true })).toBeFocused();
+  await expect(wikiSetting).toHaveClass(/\blanded\b/u);
+});
+
+test('without motion, a marked setting holds still and then lets go', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/profiles');
+  await page.getByText('configuration', { exact: true }).click();
+  await page.getByRole('button', { name: 'Wiki in Repository', exact: true }).click();
+  const wikiSetting = page
+    .locator('.setting')
+    .filter({ has: page.getByRole('radiogroup', { name: 'Wiki', exact: true }) });
+  await expect(wikiSetting).toHaveCSS('animation-name', 'landed-still');
+  await expect(wikiSetting).not.toHaveClass(/\blanded\b/u, { timeout: 5000 });
+});
+
+test("a review note's Edit goes back to the edits at the setting it names", async ({ page }) => {
+  // The repository allows all actions, so a profile's choice of which are allowed is skipped.
+  await page.goto('/profiles');
+  await page.getByText('base', { exact: true }).click();
+  await page
+    .getByRole('tab', { name: /^Actions/u })
+    .first()
+    .click();
+  await page
+    .getByRole('radiogroup', { name: 'Actions by GitHub', exact: true })
+    .getByRole('radio', { name: 'On', exact: true })
+    .check();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText('base saved.', { exact: true })).toBeVisible();
+  await openPage(page, 'Repositories');
+  await page.getByRole('button', { name: /^Review apply/u }).click();
+  const note = page.locator('.review-note').filter({ hasText: 'Actions' });
+
+  await note.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.getByRole('tab', { name: /^Actions/u }).first()).toHaveAttribute('aria-selected', 'true');
+  const github = page.getByRole('radiogroup', { name: 'Actions by GitHub', exact: true });
+  await expect(github.getByRole('radio', { name: 'On', exact: true })).toBeFocused();
+  await expect(page.locator('.setting').filter({ has: github })).toHaveClass(/\blanded\b/u);
+});
+
 test('two saves of the same profile replace the live announcement', async ({ page }) => {
   await page.clock.install();
   await page.goto('/profiles');

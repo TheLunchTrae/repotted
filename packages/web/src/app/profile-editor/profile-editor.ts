@@ -233,6 +233,29 @@ export type SaveProblemPlace =
   /** The engine refused the changes together, so no one setting or entry can be reset for it. */
   | { readonly kind: 'profile' };
 
+/** A place in the editor that something can link to: a tab, a setting on it, or a field of an entry on it. */
+export type EditorPlace =
+  | { readonly kind: 'tab'; readonly tab: string }
+  /** Configuration no setting or entry holds, which shows above the tabs with a way to remove it. */
+  | { readonly kind: 'configuration'; readonly problem: ConfigurationProblem }
+  | { readonly kind: 'setting'; readonly tab: string; readonly field: SettingField }
+  | { readonly kind: 'entry'; readonly tab: EntryList; readonly row: EntryRow; readonly field: EntryField };
+
+/** Where the editor goes for a problem, or undefined for one it can't show: the profile as a whole, or a hidden setting. */
+export function placeOfProblem(problem: SaveProblem): EditorPlace | undefined {
+  const { place } = problem;
+  switch (place.kind) {
+    case 'setting':
+      return place.hiddenWhile === undefined ? { kind: 'setting', tab: problem.tab, field: place.field } : undefined;
+    case 'entry':
+      return { kind: 'entry', tab: place.row.list, row: place.row, field: place.field };
+    case 'configuration':
+      return { kind: 'configuration', problem: place.problem };
+    case 'profile':
+      return undefined;
+  }
+}
+
 export interface SaveProblem {
   /** Stable while the problem lasts. */
   readonly key: string;
@@ -317,6 +340,30 @@ const entryNouns: Readonly<Record<EntryList, string>> = {
   environments: 'environment',
   labels: 'label',
 };
+
+/** A place as a link to it reads: `Wiki in Repository`, `Label "bug"`, `Label 1`, a tab's name, or a path in the file. */
+export function nameOfPlace(place: EditorPlace): string {
+  switch (place.kind) {
+    case 'setting':
+      return `${place.field.label} in ${settingSections.find((section) => section.section === place.tab)?.name ?? place.tab}`;
+    case 'entry': {
+      const noun = entryNouns[place.tab];
+      const named = place.row.entry?.['name'] ?? place.row.savedName;
+      const capital = `${noun.charAt(0).toUpperCase()}${noun.slice(1)}`;
+      return typeof named === 'string' && named.trim() !== ''
+        ? `${capital} "${named.trim()}"`
+        : `${capital} ${String((place.row.index ?? 0) + 1)}`;
+    }
+    case 'configuration':
+      return place.problem.path.length === 0 ? 'The profile' : place.problem.path.map(String).join('.');
+    case 'tab': {
+      const list = entryLists.find((known) => known === place.tab);
+      return list === undefined
+        ? (settingSections.find((section) => section.section === place.tab)?.name ?? place.tab)
+        : entryListTitles[list];
+    }
+  }
+}
 
 function sectionOf(field: SettingField): Exclude<SourceSection, 'drafts'> {
   // eslint-disable-next-line typescript/no-unsafe-type-assertion -- setting-fields.ts names only sections the engine has, which its test holds to the schema
@@ -1176,6 +1223,66 @@ export class ProfileEditor {
       filters.delete(filter);
     }
     this.#find(this.#finding.value.query, filters);
+  }
+
+  /**
+   * Where a setting or entry that the engine names by its section and
+   * profile key shows. A setting that another one's value hides shows as
+   * that one, since changing it is what brings the hidden one back.
+   */
+  placeOf(section: string, key: string | undefined): EditorPlace | undefined {
+    const definitionSection = this.definitionSection.value;
+    if (definitionSection !== undefined && section !== definitionSection) {
+      return undefined;
+    }
+    const list = entryLists.find((known) => known === section);
+    if (list !== undefined) {
+      const rows = this.entries.value[list];
+      const nameOf = (row: EntryRow): unknown => row.entry?.['name'] ?? row.savedName;
+      // GitHub knows an environment by its name in any case.
+      const row =
+        key === undefined
+          ? undefined
+          : (rows.find((item) => nameOf(item) === key) ??
+            rows.find((item) => String(nameOf(item)).toLowerCase() === key.toLowerCase()));
+      return row === undefined ? { kind: 'tab', tab: list } : { kind: 'entry', tab: list, row, field: 'entry' };
+    }
+    const fields = fieldsOf(section);
+    if (fields.length === 0) {
+      return undefined;
+    }
+    const field =
+      key === undefined
+        ? undefined
+        : (fields.find((item) => item.key === key) ??
+          fields.find((item) => item.key.startsWith(`${key}.`)) ??
+          fields.findLast((item) => key.startsWith(`${item.key}.`)));
+    if (field === undefined) {
+      return { kind: 'tab', tab: section };
+    }
+    const turnedOff = this.#turnedOffOnGitHub(field);
+    return { kind: 'setting', tab: section, field: turnedOff?.hidden === true ? turnedOff.field : field };
+  }
+
+  /**
+   * Where a problem in the profile file shows: the setting it is in, which
+   * shows while it has the problem, hidden or not; the entry it is in; or,
+   * for neither, the configuration's own notice.
+   */
+  placeOfConfigurationProblem(problem: ConfigurationProblem): EditorPlace {
+    const field = allFields.find((item) => this.#problemMatchesField(problem, item));
+    if (field !== undefined) {
+      return { kind: 'setting', tab: field.section, field };
+    }
+    const [section, at] = problem.path;
+    const list = entryLists.find((known) => known === section);
+    const row =
+      list === undefined || typeof at !== 'number'
+        ? undefined
+        : this.entries.value[list].find((item) => item.index === at);
+    return list === undefined || row === undefined
+      ? { kind: 'configuration', problem }
+      : { kind: 'entry', tab: list, row, field: 'entry' };
   }
 
   clearFilters(): void {

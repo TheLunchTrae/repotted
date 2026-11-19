@@ -1,11 +1,11 @@
 import type { JSX } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Spinner } from '../layout/loading.js';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
 import type { Apply } from '../../app/apply/apply.js';
-import { type CompareRow, sectionTitles } from '../../app/apply/comparison.js';
+import { type CompareRow, type LinkedReviewNote, sectionTitles } from '../../app/apply/comparison.js';
 import { repositoryAddress } from '../../app/navigation/addressed-repository.js';
 import type { Router } from '../../app/navigation/router.js';
 import { BarActions } from '../layout/action-bar.js';
@@ -14,6 +14,7 @@ import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
 import { OwnershipChoices } from './ownership.js';
+import { ReviewNotes } from './review-notes.js';
 
 const kinds: Readonly<Record<CompareRow['kind'], string>> = { changes: 'Changes', adds: 'Adds', removes: 'Removes' };
 
@@ -140,6 +141,14 @@ export function ApplyPage({ apply, router, earlierApplies }: ApplyProps): JSX.El
   const counts = apply.counts.value;
   const working = state.kind === 'reviewing' || state.kind === 'applying';
   const editor = apply.editor.value;
+  // A review note's Edit goes back to the edits at what it names, as a new object each time, so the same note goes again.
+  const [editing, setEditing] = useState<{ readonly about: NonNullable<LinkedReviewNote['about']> } | undefined>(
+    undefined,
+  );
+  const landOn = useMemo(
+    () => (editing === undefined ? undefined : editor?.placeOf(editing.about.section, editing.about.key)),
+    [editing, editor],
+  );
   const discard = (
     <button
       class="button button-quiet"
@@ -236,6 +245,7 @@ export function ApplyPage({ apply, router, earlierApplies }: ApplyProps): JSX.El
               key={editor.file}
               name={state.profileName}
               editor={editor}
+              landOn={landOn}
               ownerTypeHasPushRulesets={editor.ownerType.value !== 'user'}
               saving={{
                 save: () => editor.save((work) => work()),
@@ -329,11 +339,14 @@ export function ApplyPage({ apply, router, earlierApplies }: ApplyProps): JSX.El
             {state.warnings.length > 0 && (
               <div class="notice notice-drift">
                 <p>Review notes:</p>
-                <ul>
-                  {state.warnings.map((warning) => (
-                    <li key={warning}>{warning}</li>
-                  ))}
-                </ul>
+                <ReviewNotes
+                  notes={state.warnings}
+                  editDisabled={working}
+                  onEdit={(about) => {
+                    setEditing({ about });
+                    run(apply.backToEdits());
+                  }}
+                />
               </div>
             )}
             {state.skippedDrafts.length > 0 && (
@@ -450,6 +463,7 @@ export function ApplyPage({ apply, router, earlierApplies }: ApplyProps): JSX.El
                     type="button"
                     disabled={working}
                     onClick={() => {
+                      setEditing(undefined);
                       run(apply.backToEdits());
                     }}
                   >
