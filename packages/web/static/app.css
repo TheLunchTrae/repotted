@@ -1572,6 +1572,20 @@ button.link.profiles-back {
   gap: 4px;
 }
 
+/* A list's selection and its batch actions, which move to the end of the line, sit under the list's bar. */
+.selection-bar,
+.batch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.selection-bar .batch-actions,
+.found-batch .batch-actions {
+  margin-inline-start: auto;
+}
+
 /* What a batch action did, with Undo, takes a line of its own in the row of the heading or the list's bar. */
 .batch-done {
   display: flex;

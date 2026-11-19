@@ -31,6 +31,7 @@ import type { ActionPatternChecks } from './action-pattern-checks.js';
 import type { ActionSearch } from './action-search.js';
 import type { GitHubAppLookup } from './bypass-actors.js';
 import {
+  canBePutBack,
   canBeTakenOut,
   type EntryChanges,
   EntryEdits,
@@ -160,26 +161,42 @@ export interface GroupBatch {
   readonly unsaved: number;
 }
 
+/** While any of a list's entries are selected, the counts cover only those, as its batch actions do. */
 export interface EntryListBatch {
+  readonly selected: number;
   readonly unsaved: number;
   readonly canBeTakenOut: number;
+  readonly canBePutBack: number;
 }
 
-export type BatchScope = SettingGroup | EntryList;
+/** What Find a setting's Remove all and Reset all would change, counting only the settings found. */
+export interface FoundBatch {
+  readonly namedHere: number;
+  readonly unsaved: number;
+}
 
-/** What the last Remove all, Reset all, or Take out all did, which Undo takes back. */
+/**
+ * Where a batch action was pressed: a group, a list, the settings found, the
+ * save bar's Reset for the whole profile, or the allowed actions' patterns.
+ */
+export type BatchScope = SettingGroup | EntryList | 'found' | 'profile' | 'patterns';
+
+/** What the last batch action did, which Undo takes back. */
 export interface BatchDone {
   readonly scope: BatchScope;
-  readonly action: 'removed' | 'reset' | 'taken-out';
+  readonly action: 'removed' | 'reset' | 'taken-out' | 'put-back';
   readonly count: number;
   readonly hiddenByGitHub: number;
 }
+
+type ReusableChoice = Omit<ReusableDefinition, 'targetName'> & { readonly key: string };
 
 interface BatchUndo {
   readonly done: BatchDone;
   readonly edits: ReadonlyMap<string, SettingEdit>;
   readonly typed: ReadonlyMap<string, TypedText>;
   readonly entries: EntryChanges;
+  readonly reusable: readonly ReusableChoice[];
 }
 
 interface TypedText {
@@ -406,7 +423,13 @@ export class ProfileEditor {
   readonly #typed = signal<ReadonlyMap<string, TypedText>>(new Map());
   readonly #batchUndo = signal<BatchUndo | undefined>(undefined);
   readonly #entryEdits = new EntryEdits();
-  readonly #reusable = signal<readonly (Omit<ReusableDefinition, 'targetName'> & { readonly key: string })[]>([]);
+  readonly #reusable = signal<readonly ReusableChoice[]>([]);
+  /**
+   * Which entries are selected is only how the lists show, so selecting one
+   * is no change and keeps the undo. A save or a fresh read clears it, since
+   * either can give an entry's key to another.
+   */
+  readonly #selectedEntryKeys = signal<ReadonlySet<string>>(new Set());
   #settingEditsSaveIsWriting: ReadonlyMap<string, SettingEdit> = new Map();
   #latestPreviewNumber = 0;
   /** Counts what a preview of a save can go out of date by, so one made before then is never shown. */
@@ -807,10 +830,58 @@ export class ProfileEditor {
       }),
   );
 
+  /** Keys of entries that went, as a reset of a new one does, drop out, so a selection never counts what isn't listed. */
+  readonly selectedEntryKeys = computed(() => {
+    const listed = new Set(
+      Object.values(this.#entryEdits.rows.value)
+        .flat()
+        .map((row) => row.key),
+    );
+    return new Set([...this.#selectedEntryKeys.value].filter((key) => listed.has(key)));
+  });
+
+  isEntrySelected(row: EntryRow): boolean {
+    return this.selectedEntryKeys.value.has(row.key);
+  }
+
+  selectEntry(row: EntryRow, selected: boolean): void {
+    const keys = new Set(this.selectedEntryKeys.value);
+    if (selected) {
+      keys.add(row.key);
+    } else {
+      keys.delete(row.key);
+    }
+    this.#selectedEntryKeys.value = keys;
+  }
+
+  selectAllEntriesIn(list: EntryList): void {
+    this.#selectedEntryKeys.value = new Set([
+      ...this.selectedEntryKeys.value,
+      ...this.#entryEdits.rows.value[list].map((row) => row.key),
+    ]);
+  }
+
+  deselectAllEntriesIn(list: EntryList): void {
+    const inList = new Set(this.#entryEdits.rows.value[list].map((row) => row.key));
+    this.#selectedEntryKeys.value = new Set([...this.selectedEntryKeys.value].filter((key) => !inList.has(key)));
+  }
+
+  /** The entries a list's batch actions change: those selected, or while none are, every one. */
+  #entriesBatchActionsChange(list: EntryList): readonly EntryRow[] {
+    const rows = this.#entryEdits.rows.value[list];
+    const selected = rows.filter((row) => this.selectedEntryKeys.value.has(row.key));
+    return selected.length > 0 ? selected : rows;
+  }
+
   readonly entryListBatches = computed((): Readonly<Record<EntryList, EntryListBatch>> => {
     const batch = (list: EntryList): EntryListBatch => {
-      const rows = this.#entryEdits.rows.value[list];
-      return { unsaved: rows.filter((row) => row.unsaved).length, canBeTakenOut: rows.filter(canBeTakenOut).length };
+      const rows = this.#entriesBatchActionsChange(list);
+      return {
+        selected: this.#entryEdits.rows.value[list].filter((row) => this.selectedEntryKeys.value.has(row.key)).length,
+        unsaved: rows.filter((row) => row.unsaved).length,
+        canBeTakenOut: rows.filter(canBeTakenOut).length,
+        canBePutBack: rows.filter(canBePutBack).length,
+      };
     };
     return {
       actions_policies: batch('actions_policies'),
@@ -854,6 +925,19 @@ export class ProfileEditor {
       (count, group) => count + group.rows.filter((row) => fits.has(keyOf(row.field.path))).length,
       0,
     );
+  });
+
+  /** The settings found themselves, and not those shown only for what sits under them. */
+  readonly #foundFields = computed(() => {
+    const { fits } = this.#finding.value;
+    return this.found.value.flatMap((group) =>
+      group.rows.filter((row) => fits.has(keyOf(row.field.path))).map((row) => row.field),
+    );
+  });
+
+  readonly foundBatch = computed((): FoundBatch => {
+    const { namedHere, unsaved } = this.#batchOfFields(this.#foundFields.value);
+    return { namedHere, unsaved };
   });
 
   readonly foundSummary = computed(() => {
@@ -954,6 +1038,7 @@ export class ProfileEditor {
       return;
     }
     this.#batchUndo.value = undefined;
+    this.#selectedEntryKeys.value = new Set();
     if ('problem' in result) {
       this.#saved.value = undefined;
       this.#entryEdits.setSaved(undefined);
@@ -1192,8 +1277,21 @@ export class ProfileEditor {
     await this.#previewEdits();
   }
 
-  async resetAll(): Promise<void> {
-    this.#batchUndo.value = undefined;
+  /**
+   * Puts the whole profile back as saved. Offered with Undo, as the save
+   * bar's Reset is, it holds what it took away; a profile being repaired is
+   * read again instead, which nothing can undo.
+   */
+  async resetAll({ offerUndo = false }: { readonly offerUndo?: boolean } = {}): Promise<void> {
+    const count =
+      new Set([...this.#edits.value.keys(), ...this.#typed.value.keys()]).size +
+      this.#entryEdits.count.value +
+      this.reusableDefinitions.value.length;
+    if (offerUndo && count > 0 && this.repair.value === undefined && !this.saving.value) {
+      this.#holdUndo({ scope: 'profile', action: 'reset', count, hiddenByGitHub: 0 });
+    } else {
+      this.#batchUndo.value = undefined;
+    }
     this.#edits.value = new Map();
     this.#entryEdits.resetAll();
     this.#reusable.value = [];
@@ -1211,6 +1309,7 @@ export class ProfileEditor {
     if (problem.file !== this.file || this.saving.value) {
       return;
     }
+    this.#batchUndo.value = undefined;
     const path = problem.path.filter((part): part is string => typeof part === 'string');
     const edits = new Map(this.#edits.value);
     const section = path[0];
@@ -1252,12 +1351,30 @@ export class ProfileEditor {
    * unsaved until a save, and Undo takes it back.
    */
   async removeAllIn(group: SettingGroup): Promise<void> {
-    const named = this.#namedHere(group);
+    await this.#removeAllAmong(this.#fieldsOwnerTypeHas(group), group);
+  }
+
+  /** Puts each setting in the group back as saved, as Reset does on each, those GitHub hides included. */
+  async resetAllIn(group: SettingGroup): Promise<void> {
+    await this.#resetAllAmong(this.#fieldsOwnerTypeHas(group), group);
+  }
+
+  /** As a group's Remove all, for the settings Find a setting found. */
+  async removeAllFound(): Promise<void> {
+    await this.#removeAllAmong(this.#foundFields.value, 'found');
+  }
+
+  async resetAllFound(): Promise<void> {
+    await this.#resetAllAmong(this.#foundFields.value, 'found');
+  }
+
+  async #removeAllAmong(fields: readonly SettingField[], scope: BatchScope): Promise<void> {
+    const named = this.#namedHereAmong(fields);
     if (named.length === 0 || this.saving.value) {
       return;
     }
     const hiddenByGitHub = named.filter((field) => this.#turnedOffOnGitHub(field)?.hidden === true).length;
-    this.#holdUndo({ scope: group, action: 'removed', count: named.length, hiddenByGitHub });
+    this.#holdUndo({ scope, action: 'removed', count: named.length, hiddenByGitHub });
     const edits = new Map(this.#edits.value);
     const typed = new Map(this.#typed.value);
     for (const field of named) {
@@ -1267,41 +1384,100 @@ export class ProfileEditor {
     await this.#replaceChanges(edits, typed);
   }
 
-  /** Puts each setting in the group back as saved, as Reset does on each, those GitHub hides included. */
-  async resetAllIn(group: SettingGroup): Promise<void> {
-    const keys = new Set(this.#fieldsOwnerTypeHas(group).map((field) => keyOf(field.path)));
+  async #resetAllAmong(fields: readonly SettingField[], scope: BatchScope): Promise<void> {
+    const keys = new Set(fields.map((field) => keyOf(field.path)));
     const count = [...keys].filter((key) => this.#edits.value.has(key) || this.#typed.value.has(key)).length;
     if (count === 0 || this.saving.value) {
       return;
     }
-    this.#holdUndo({ scope: group, action: 'reset', count, hiddenByGitHub: 0 });
+    this.#holdUndo({ scope, action: 'reset', count, hiddenByGitHub: 0 });
     await this.#replaceChanges(
       new Map([...this.#edits.value].filter(([key]) => !keys.has(key))),
       new Map([...this.#typed.value].filter(([key]) => !keys.has(key))),
     );
   }
 
+  /** Resets the list's selected entries, or while none are selected, every one. */
   async resetAllEntriesIn(list: EntryList): Promise<void> {
-    const count = this.entryListBatches.value[list].unsaved;
-    if (count === 0 || this.saving.value) {
-      return;
-    }
-    this.#holdUndo({ scope: list, action: 'reset', count, hiddenByGitHub: 0 });
-    this.#entryEdits.resetAllIn(list);
-    await this.#previewChanges();
+    await this.#changeEntriesIn(
+      list,
+      'reset',
+      (row) => row.unsaved,
+      (row) => {
+        this.#entryEdits.reset(row);
+      },
+    );
   }
 
+  /** Takes the list's selected entries out of the profile, or while none are selected, every one that can be. */
   async takeOutAllIn(list: EntryList): Promise<void> {
-    const count = this.entryListBatches.value[list].canBeTakenOut;
-    if (count === 0 || this.saving.value) {
+    await this.#changeEntriesIn(list, 'taken-out', canBeTakenOut, (row) => {
+      this.#entryEdits.takeOut(row);
+    });
+  }
+
+  /** Puts back the list's selected entries that are out of the profile, or while none are selected, every one. */
+  async putAllBackIn(list: EntryList): Promise<void> {
+    await this.#changeEntriesIn(list, 'put-back', canBePutBack, (row) => {
+      this.#entryEdits.putBack(row);
+    });
+  }
+
+  async #changeEntriesIn(
+    list: EntryList,
+    action: BatchDone['action'],
+    changes: (row: EntryRow) => boolean,
+    change: (row: EntryRow) => void,
+  ): Promise<void> {
+    const rows = this.#entriesBatchActionsChange(list).filter(changes);
+    if (rows.length === 0 || this.saving.value) {
       return;
     }
-    this.#holdUndo({ scope: list, action: 'taken-out', count, hiddenByGitHub: 0 });
-    this.#entryEdits.takeOutAllIn(list);
+    this.#holdUndo({ scope: list, action, count: rows.length, hiddenByGitHub: 0 });
+    for (const row of rows) {
+      change(row);
+    }
     await this.#previewChanges();
   }
 
-  /** Brings back every unsaved change, typed text included, exactly as it was before the last Remove all, Reset all, or Take out all. */
+  /** How many lines of the allowed actions' list GitHub says match nothing, as their checks come back. */
+  readonly patternsMatchingNothing = computed(() => {
+    const lines = this.#patternLines.value;
+    const matchingNothing = this.patterns?.patternsMatchingNothing.value;
+    if (lines === undefined || matchingNothing === undefined) {
+      return 0;
+    }
+    return lines.filter((line) => matchingNothing.has(line.trim())).length;
+  });
+
+  /** Takes each pattern that GitHub says matches nothing, or refuses, off the allowed actions' list, with Undo. */
+  async removePatternsMatchingNothing(): Promise<void> {
+    const field = allFields.find((item) => keyOf(item.path) === patternsPath);
+    const lines = this.#patternLines.value;
+    const matchingNothing = this.patterns?.patternsMatchingNothing.value;
+    const count = this.patternsMatchingNothing.value;
+    if (
+      field === undefined ||
+      lines === undefined ||
+      matchingNothing === undefined ||
+      count === 0 ||
+      this.saving.value
+    ) {
+      return;
+    }
+    this.#holdUndo({ scope: 'patterns', action: 'removed', count, hiddenByGitHub: 0 });
+    const edits = new Map(this.#edits.value);
+    const typed = new Map(this.#typed.value);
+    typed.delete(patternsPath);
+    this.#changeIn(
+      edits,
+      field,
+      lines.map((line) => line.trim()).filter((line) => line !== '' && !matchingNothing.has(line)),
+    );
+    await this.#replaceChanges(edits, typed);
+  }
+
+  /** Brings back every unsaved change, typed text included, exactly as it was before the last batch action. */
   async undoBatch(): Promise<void> {
     const undo = this.#batchUndo.value;
     if (undo === undefined || this.saving.value) {
@@ -1309,6 +1485,7 @@ export class ProfileEditor {
     }
     this.#batchUndo.value = undefined;
     this.#entryEdits.restore(undo.entries);
+    this.#reusable.value = undo.reusable;
     await this.#replaceChanges(undo.edits, undo.typed);
   }
 
@@ -1319,6 +1496,7 @@ export class ProfileEditor {
       edits: this.#edits.value,
       typed: this.#typed.value,
       entries: this.#entryEdits.snapshot(),
+      reusable: this.#reusable.value,
     };
   }
 
@@ -1476,6 +1654,7 @@ export class ProfileEditor {
         }
         this.#saved.value = current;
         this.#entryEdits.setSaved(current);
+        this.#selectedEntryKeys.value = new Set();
         // Every save finishes, adds to, or discards the whole draft, so it acts only on the draft that was shown.
         if (!sameValue(shown, comparableOwnDraft(current))) {
           throw new Error("The profile's draft changed elsewhere. Look at it as it is now, then try again.");
@@ -1663,8 +1842,8 @@ export class ProfileEditor {
   }
 
   /** Those whose value comes from this profile's own file, its draft, or an unsaved change, and not from a base profile. */
-  #namedHere(group: SettingGroup): readonly SettingField[] {
-    return this.#fieldsOwnerTypeHas(group).filter((field) => {
+  #namedHereAmong(fields: readonly SettingField[]): readonly SettingField[] {
+    return fields.filter((field) => {
       const edit = this.#edits.value.get(keyOf(field.path));
       const own = edit === undefined ? this.#valueRowStartsFrom(field) : edit.value;
       return own !== undefined;
@@ -1672,14 +1851,18 @@ export class ProfileEditor {
   }
 
   #batchOf(group: SettingGroup): GroupBatch {
+    return this.#batchOfFields(this.#fieldsOwnerTypeHas(group));
+  }
+
+  #batchOfFields(fields: readonly SettingField[]): GroupBatch {
     if (this.#saved.value === undefined) {
       return { namedHere: 0, namedHereThatGitHubHides: 0, unsaved: 0 };
     }
-    const named = this.#namedHere(group);
+    const named = this.#namedHereAmong(fields);
     return {
       namedHere: named.length,
       namedHereThatGitHubHides: named.filter((field) => this.#turnedOffOnGitHub(field)?.hidden === true).length,
-      unsaved: this.#fieldsOwnerTypeHas(group).filter(
+      unsaved: fields.filter(
         (field) => this.#edits.value.has(keyOf(field.path)) || this.#typed.value.has(keyOf(field.path)),
       ).length,
     };

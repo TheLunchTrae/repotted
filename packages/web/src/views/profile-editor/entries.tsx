@@ -2,7 +2,7 @@ import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useId, useRef, useState } from 'preact/hooks';
 
 import type { GitHubAppLookup } from '../../app/profile-editor/bypass-actors.js';
-import type { EntryField, EntryList, EntryRow } from '../../app/profile-editor/entry-edits.js';
+import { canBePutBack, type EntryField, type EntryList, type EntryRow } from '../../app/profile-editor/entry-edits.js';
 import {
   branchPolicies,
   deploymentBranches,
@@ -33,10 +33,10 @@ import {
   withRuleParameter,
   withStatusChecks,
 } from '../../app/profile-editor/entry-forms.js';
-import type { ProfileEditor } from '../../app/profile-editor/profile-editor.js';
+import type { EntryListBatch, ProfileEditor } from '../../app/profile-editor/profile-editor.js';
 import { sameValue } from '../../app/profile-editor/same-value.js';
 import { run } from '../layout/run.js';
-import { BatchActions, describeEntriesDone } from './batch-actions.js';
+import { type BatchAction, BatchActions, describeEntriesDone } from './batch-actions.js';
 import { BypassList } from './bypass-list.js';
 import { MissingPermissionsNote } from './missing-permissions-note.js';
 import { ReusableDefinitionOption } from './reusable-definition.js';
@@ -1224,6 +1224,37 @@ function EntryForm({
   );
 }
 
+/** With entries selected, the actions change only those, and their labels drop "all". */
+function entryBatchActions(
+  editor: ProfileEditor,
+  list: EntryList,
+  batch: EntryListBatch,
+  noun: { readonly one: string; readonly many: string },
+): readonly BatchAction[] {
+  const selecting = batch.selected > 0;
+  const counted = (count: number): string => `${selecting ? 'selected ' : ''}${count === 1 ? noun.one : noun.many}`;
+  return [
+    {
+      label: selecting ? 'Reset' : 'Reset all',
+      count: batch.unsaved,
+      counted: counted(batch.unsaved),
+      act: () => editor.resetAllEntriesIn(list),
+    },
+    {
+      label: selecting ? 'Take out' : 'Take out all',
+      count: batch.canBeTakenOut,
+      counted: counted(batch.canBeTakenOut),
+      act: () => editor.takeOutAllIn(list),
+    },
+    {
+      label: selecting ? 'Put back' : 'Put all back',
+      count: batch.canBePutBack,
+      counted: counted(batch.canBePutBack),
+      act: () => editor.putAllBackIn(list),
+    },
+  ];
+}
+
 interface EntriesProps {
   readonly single?: boolean;
   readonly editor: ProfileEditor;
@@ -1330,28 +1361,46 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo, si
         >
           New {noun.one}
         </button>
-        {!previewingReferences && (
+      </div>
+      {(rows.length > 0 || editor.batchDone.value?.scope === kind) && !previewingReferences && (
+        <div class="selection-bar">
+          {batch.selected > 0 && <span class="small">{batch.selected} selected</span>}
+          {rows.length > 0 && (
+            <button
+              class="button button-quiet button-small"
+              type="button"
+              aria-label={`${batch.selected === rows.length ? 'Deselect' : 'Select'} all ${noun.many}`}
+              onClick={() => {
+                if (batch.selected === rows.length) {
+                  editor.deselectAllEntriesIn(kind);
+                } else {
+                  editor.selectAllEntriesIn(kind);
+                }
+              }}
+            >
+              {batch.selected === rows.length ? 'Deselect all' : 'Select all'}
+            </button>
+          )}
+          {batch.selected > 0 && batch.selected < rows.length && (
+            <button
+              class="button button-quiet button-small"
+              type="button"
+              aria-label={`Deselect all ${noun.many}`}
+              onClick={() => {
+                editor.deselectAllEntriesIn(kind);
+              }}
+            >
+              Deselect all
+            </button>
+          )}
           <BatchActions
             editor={editor}
             scope={kind}
             describeDone={describeEntriesDone(noun.one, noun.many)}
-            actions={[
-              {
-                label: 'Reset all',
-                count: batch.unsaved,
-                counted: batch.unsaved === 1 ? noun.one : noun.many,
-                act: () => editor.resetAllEntriesIn(kind),
-              },
-              {
-                label: 'Take out all',
-                count: batch.canBeTakenOut,
-                counted: batch.canBeTakenOut === 1 ? noun.one : noun.many,
-                act: () => editor.takeOutAllIn(kind),
-              },
-            ]}
+            actions={entryBatchActions(editor, kind, batch, noun)}
           />
-        )}
-      </div>
+        </div>
+      )}
       {rows.length > 0 && (
         <ul class="rows" ref={list}>
           {rows.map((row) => {
@@ -1359,7 +1408,17 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo, si
             const name = entry === undefined ? (row.savedName ?? '') : text(entry['name']);
             const color = entry === undefined ? undefined : hexColor(entry);
             return (
-              <li key={row.key} class="entry-row">
+              <li key={row.key} class="selectable-row entry-row">
+                <input
+                  class="select-box"
+                  type="checkbox"
+                  aria-label={`Select ${name === '' ? `new ${noun.one}` : name}`}
+                  checked={editor.isEntrySelected(row)}
+                  disabled={previewingReferences}
+                  onChange={(event) => {
+                    editor.selectEntry(row, event.currentTarget.checked);
+                  }}
+                />
                 <button
                   class="row"
                   type="button"
@@ -1396,7 +1455,7 @@ export function Entries({ editor, list: kind, ownerTypeHasPushRulesets, goTo, si
                     <span class="muted small">From {row.source}</span>
                   )}
                 </button>
-                {entry === undefined && (
+                {canBePutBack(row) && (
                   <button
                     class="button button-quiet button-small"
                     type="button"

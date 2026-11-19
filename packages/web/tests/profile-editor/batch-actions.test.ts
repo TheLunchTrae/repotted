@@ -176,7 +176,12 @@ test("a list's Reset all and Take out all leave a base's entries and other lists
   });
   await editor.addEntry('rulesets', { name: 'Tags', target: 'tag', enforcement: 'active' });
   await editor.changeEntry(entry(editor, 'labels', 'bug'), { name: 'bug', color: '000000' });
-  expect(editor.entryListBatches.value.rulesets).toEqual({ unsaved: 2, canBeTakenOut: 2 });
+  expect(editor.entryListBatches.value.rulesets).toEqual({
+    selected: 0,
+    unsaved: 2,
+    canBeTakenOut: 2,
+    canBePutBack: 0,
+  });
 
   await editor.takeOutAllIn('rulesets');
 
@@ -289,7 +294,12 @@ test("a base's entry changed here counts for Reset all but can't be taken out", 
     enforcement: 'disabled',
   });
 
-  expect(editor.entryListBatches.value.rulesets).toEqual({ unsaved: 1, canBeTakenOut: 0 });
+  expect(editor.entryListBatches.value.rulesets).toEqual({
+    selected: 0,
+    unsaved: 1,
+    canBeTakenOut: 0,
+    canBePutBack: 0,
+  });
 });
 
 test('Take out all drops a change to an entry a sync took away, so the save can go on', async () => {
@@ -359,4 +369,168 @@ test('resetting every save problem clears a batch undo snapshot', async () => {
 
   expect(editor.problemsBlockingSave.value).toEqual([]);
   expect(editor.batchDone.value).toBeUndefined();
+});
+
+function foundKeys(editor: ProfileEditor): string[] {
+  return editor.found.value.flatMap((item) => item.rows.map((found) => found.field.path.join('.')));
+}
+
+test("Find a setting's Remove all and Reset all change only the settings found, and Undo takes them back", async () => {
+  const editor = await opened({ 'base.yaml': base, 'web.yaml': codeScanning });
+  await editor.set(field('security.code_scanning_default_setup.runner_type'), 'labeled');
+  editor.search('query suite');
+  expect(foundKeys(editor)).toContain('security.code_scanning_default_setup.query_suite');
+  expect(editor.foundBatch.value).toEqual({ namedHere: 1, unsaved: 0 });
+
+  await editor.removeAllFound();
+
+  expect(row(editor, 'security.code_scanning_default_setup.query_suite')?.unsaved).toBe(true);
+  expect(row(editor, 'security.code_scanning_default_setup.state')?.unsaved).toBe(false);
+  expect(row(editor, 'security.code_scanning_default_setup.runner_type')?.value).toBe('labeled');
+  expect(editor.batchDone.value).toMatchObject({ scope: 'found', action: 'removed', count: 1 });
+  expect(editor.foundBatch.value).toEqual({ namedHere: 0, unsaved: 1 });
+
+  await editor.undoBatch();
+  expect(row(editor, 'security.code_scanning_default_setup.query_suite')?.unsaved).toBe(false);
+
+  await editor.set(field('security.code_scanning_default_setup.query_suite'), 'default');
+  await editor.resetAllFound();
+  expect(row(editor, 'security.code_scanning_default_setup.query_suite')).toMatchObject({
+    value: 'extended',
+    unsaved: false,
+  });
+  expect(row(editor, 'security.code_scanning_default_setup.runner_type')?.unsaved).toBe(true);
+  expect(editor.batchDone.value).toMatchObject({ scope: 'found', action: 'reset', count: 1 });
+});
+
+test('a setting shown only for an option found under it is not removed with the settings found', async () => {
+  const editor = await opened({ 'web.yaml': 'repository:\n  has_pull_requests: true\n' });
+  editor.search('who can create');
+  expect(foundKeys(editor)).toContain('repository.has_pull_requests');
+  expect(editor.foundBatch.value).toEqual({ namedHere: 0, unsaved: 0 });
+
+  await editor.removeAllFound();
+
+  expect(row(editor, 'repository.has_pull_requests')).toMatchObject({ value: true, unsaved: false });
+  expect(editor.batchDone.value).toBeUndefined();
+});
+
+test("a list's batch actions change only the selected entries while any are, and selecting keeps the undo", async () => {
+  const editor = await opened({
+    'web.yaml': `${lists.replace('extends: base.yaml\n', '')}  - name: Docs\n    color: 0075ca\n`,
+  });
+  const bug = entry(editor, 'labels', 'bug');
+  editor.selectEntry(bug, true);
+  expect(editor.entryListBatches.value.labels).toEqual({
+    selected: 1,
+    unsaved: 0,
+    canBeTakenOut: 1,
+    canBePutBack: 0,
+  });
+
+  await editor.takeOutAllIn('labels');
+
+  expect(entry(editor, 'labels', 'bug').entry).toBeUndefined();
+  expect(entry(editor, 'labels', 'Docs').entry).toBeDefined();
+  expect(editor.batchDone.value).toMatchObject({ scope: 'labels', action: 'taken-out', count: 1 });
+  editor.selectEntry(entry(editor, 'labels', 'Docs'), true);
+  editor.deselectAllEntriesIn('rulesets');
+  expect(editor.batchDone.value).toBeDefined();
+  expect(editor.entryListBatches.value.labels).toMatchObject({ selected: 2, canBeTakenOut: 1, canBePutBack: 1 });
+
+  await editor.putAllBackIn('labels');
+  expect(entry(editor, 'labels', 'bug')).toMatchObject({ unsaved: false, entry: { name: 'bug' } });
+  expect(editor.batchDone.value).toMatchObject({ scope: 'labels', action: 'put-back', count: 1 });
+
+  editor.deselectAllEntriesIn('labels');
+  expect(editor.entryListBatches.value.labels).toMatchObject({ selected: 0, canBeTakenOut: 2 });
+  editor.selectAllEntriesIn('labels');
+  expect(editor.entryListBatches.value.labels.selected).toBe(2);
+  expect(editor.entryListBatches.value.rulesets.selected).toBe(0);
+});
+
+test('Put all back brings back each entry taken out, and a new one that went is no longer selected', async () => {
+  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  const key = await editor.addEntry('labels', { name: 'docs', color: '0075ca' });
+  const added = editor.entries.value.labels.find((item) => item.key === key);
+  if (added === undefined) {
+    throw new Error('The new label is not listed.');
+  }
+  editor.selectEntry(added, true);
+  await editor.resetEntry(added);
+  expect(editor.selectedEntryKeys.value.size).toBe(0);
+
+  await editor.takeOutAllIn('rulesets');
+  await editor.takeOutAllIn('labels');
+  await editor.putAllBackIn('rulesets');
+
+  expect(entry(editor, 'rulesets', 'Main')).toMatchObject({ unsaved: false, entry: { name: 'Main' } });
+  expect(entry(editor, 'labels', 'bug').entry).toBeUndefined();
+  expect(editor.batchDone.value).toMatchObject({ scope: 'rulesets', action: 'put-back', count: 1 });
+});
+
+test("the save bar's Reset offers Undo, which brings back every change; other resets don't", async () => {
+  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  await editor.set(field('repository.has_wiki'), false);
+  await editor.type(field('repository.default_branch'), 'main dev');
+  await editor.changeEntry(entry(editor, 'labels', 'bug'), { name: 'bug', color: '000000' });
+
+  await editor.resetAll({ offerUndo: true });
+
+  expect(editor.dirty.value).toBe(false);
+  expect(editor.batchDone.value).toEqual({ scope: 'profile', action: 'reset', count: 3, hiddenByGitHub: 0 });
+
+  await editor.undoBatch();
+  expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: false, unsaved: true });
+  expect(row(editor, 'repository.default_branch')?.textBeingTyped).toBe('main dev');
+  expect(entry(editor, 'labels', 'bug').entry?.['color']).toBe('000000');
+
+  await editor.resetAll();
+  expect(editor.batchDone.value).toBeUndefined();
+  await editor.resetAll({ offerUndo: true });
+  expect(editor.batchDone.value).toBeUndefined();
+});
+
+test('the save bar Reset holds no undo while saving, and a change while a found batch previews takes its undo', async () => {
+  const editor = await opened({ 'base.yaml': base, 'web.yaml': codeScanning });
+  await editor.set(field('security.vulnerability_alerts'), false);
+  let finishWriting = (): void => undefined;
+  const writing = new Promise<void>((resolve) => {
+    finishWriting = resolve;
+  });
+  const saving = editor.save(async (work) => {
+    await writing;
+    await work();
+  });
+  await editor.resetAll({ offerUndo: true });
+  expect(editor.batchDone.value).toBeUndefined();
+  finishWriting();
+  await saving;
+
+  editor.search('query suite');
+  const removing = editor.removeAllFound();
+  const changing = editor.set(field('security.vulnerability_alerts'), true);
+  await Promise.all([removing, changing]);
+  expect(editor.batchDone.value).toBeUndefined();
+});
+
+test('a fresh read clears the selection, so a key given to another entry is not selected', async () => {
+  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  editor.selectEntry(entry(editor, 'rulesets', 'Main'), true);
+  await writeFile('/profiles/web.yaml', 'labels:\n  - name: bug\n    color: d73a4a\n');
+  await editor.load();
+  await writeFile('/profiles/web.yaml', lists.replace('extends: base.yaml\n', ''));
+  await editor.load();
+
+  expect(editor.entryListBatches.value.rulesets.selected).toBe(0);
+});
+
+test('a save clears the selection', async () => {
+  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  editor.selectEntry(entry(editor, 'labels', 'bug'), true);
+  await editor.set(field('repository.has_wiki'), false);
+
+  await editor.save(write);
+
+  expect(editor.entryListBatches.value.labels.selected).toBe(0);
 });
