@@ -444,7 +444,7 @@ export class ApplyQueue {
                 ...other,
                 hasBegun: other.id === entry.id ? hasBegun : other.hasBegun,
                 held: true,
-                signInLost: other.held ? other.signInLost : true,
+                signInLost: true,
               }
             : other,
         );
