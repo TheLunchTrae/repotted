@@ -177,7 +177,7 @@ const session = { signOut: () => Promise.resolve() } as unknown as Session;
 const signIn = new Account(session, github);
 run(signIn.load());
 
-const keeping = await keepFiles(
+const { keeping } = await keepFiles(
   browserFiles(() => indexedDB),
   navigator.locks,
 );

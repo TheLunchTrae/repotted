@@ -1,4 +1,4 @@
-import type { Signal } from '@preact/signals';
+import type { ReadonlySignal } from '@preact/signals';
 import type { GitHub } from '@repotted/core';
 import type { JSX } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
@@ -55,7 +55,7 @@ interface AppProps {
   readonly github: GitHub;
   readonly preferences: BrowserPreferences;
   readonly router: Router;
-  readonly keeping: Signal<Keeping>;
+  readonly keeping: ReadonlySignal<Keeping>;
   readonly folders: LocalFolders;
 }
 

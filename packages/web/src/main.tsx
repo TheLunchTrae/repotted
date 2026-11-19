@@ -22,11 +22,17 @@ if (signInFailureMessage !== undefined) {
 run(account.load(signInFailureMessage));
 
 // The kept files are in memory before anything reads a profile.
-const keeping = await keepFiles(
+const kept = await keepFiles(
   browserFiles(() => indexedDB),
   // Undefined in a browser without Web Locks, whatever the type says.
   navigator.locks,
 );
+// Held here rather than by a page, so it still asks once the page that made the change is gone, such as after sign-out.
+window.addEventListener('beforeunload', (event) => {
+  if (kept.writing.value) {
+    event.preventDefault();
+  }
+});
 
 render(
   <App
@@ -34,7 +40,7 @@ render(
     github={github}
     preferences={browserPreferences(() => localStorage)}
     router={new Router(location, history, window)}
-    keeping={keeping}
+    keeping={kept.keeping}
     folders={browserFolders(
       () => indexedDB,
       // Undefined outside Chromium browsers, which is how the app knows to offer no folder.

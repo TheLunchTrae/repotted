@@ -1165,11 +1165,8 @@ deleted here, and the next sync would delete it on GitHub.
 | Keeping | The engine writes a temporary file                                            | Nothing is kept of it.                                                                                                                              |
 | Keeping | A file outside `/profiles`, including an apply, batch, or preview, is written | Nothing is kept of it.                                                                                                                              |
 | Keeping | A write to IndexedDB fails                                                    | Stopped: no later change is written, so what is kept stays as it was before the failure. A notice on every page says so until the page is reloaded. |
+| Keeping | A write to IndexedDB is pending, and the tab is closed or reloaded            | The browser asks before it leaves. Leaving anyway loses the pending changes, and those after them.                                                  |
 | Keeping | The tab closes                                                                | The lock is free for the next tab.                                                                                                                  |
-
-**Failure:** a tab closed right after a change can lose that change, since
-the write to IndexedDB follows the change in memory
-([#225](https://github.com/TheLunchTrae/repotted/issues/225)).
 
 ## Web navigation
 
