@@ -1,6 +1,7 @@
 import type { AuthoritativeSection, Plan, StagedApply } from '@repotted/core';
 
-import { type AppliedVersion, profileName, profileVersion } from './repository-profiles.js';
+import { profileName, profileVersion } from './repository-profiles.js';
+import type { AppliedVersion } from './saved-assignments.js';
 
 type AssignableProfiles = { readonly kind: 'own' } | { readonly kind: 'add'; readonly profileName: string };
 

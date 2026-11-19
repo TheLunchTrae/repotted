@@ -15,6 +15,8 @@ export interface ConfigChange {
   readonly nouns: string;
   readonly nounQualifier?: string;
   readonly name: string;
+  /** Words for the clause that counts the changes instead of naming them, when `noun` would count the wrong thing. */
+  readonly counted?: { readonly action: string; readonly noun: string; readonly nouns: string };
 }
 
 type ChangeKind = Omit<ConfigChange, 'name'>;
@@ -84,7 +86,8 @@ function namedClause(group: ChangeGroup, shownNames: readonly string[]): string 
 
 function countedClause(group: ChangeGroup): string {
   const { kind, names } = group;
-  return `${kind.action} ${names.length} ${names.length === 1 ? kind.noun : kind.nouns}${qualifierOf(kind)}`;
+  const { action, noun, nouns } = kind.counted ?? kind;
+  return `${action} ${names.length} ${names.length === 1 ? noun : nouns}${qualifierOf(kind)}`;
 }
 
 /** Names as many as fit, and at least one; undefined when not even one does. */

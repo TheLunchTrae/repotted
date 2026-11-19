@@ -40,7 +40,7 @@ test('names a folder made, with the repositories moved into it', () => {
   ).toBe('Create folder: Home; move repositories to folder Home: octo/app, octo/b');
 });
 
-test('names profiles changed on a folder alongside a move', () => {
+test('names profiles applied on move into a folder alongside a move', () => {
   expect(
     message(
       { [repositoryFoldersKey]: [{ name: 'Work', repositories: [], profiles: ['base.yaml'] }] },
@@ -51,7 +51,7 @@ test('names profiles changed on a folder alongside a move', () => {
       },
     ),
   ).toBe(
-    'Update profiles for folder: Work; move 1 repository to folder Work\n\n- Update profiles for folder: Work\n- Move repository to folder Work: octo/app',
+    'Apply profiles on move into 1 folder; move 1 repository to folder Work\n\n- Apply profiles on move into folder: Work\n- Move repository to folder Work: octo/app',
   );
 });
 

@@ -1,6 +1,17 @@
 import type { ConfigChange } from '@repotted/core';
 import * as z from 'zod/mini';
 
+import { repositoryProfilesKey } from '../repositories/saved-assignments.js';
+import {
+  addProfileListChanges,
+  addProfileSettingChange,
+  assignmentChanges,
+  emptyProfileChanges,
+  type ProfileChanges,
+  profileConfigChanges,
+  type ProfileTarget,
+} from './assignment-changes.js';
+
 export const hiddenOwnersKey = 'hidden-repository-owners';
 export const hiddenRepositoriesKey = 'hidden-repositories';
 export const repositoryFoldersKey = 'repository-folders';
@@ -133,8 +144,39 @@ function folderOfEachRepository(folders: readonly Folder[]): Map<string, { repos
   return filed;
 }
 
-function sameValue(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+function describeFolderProfiles(changes: ProfileChanges, folderBefore: Folder | undefined, folderAfter: Folder): void {
+  const target: ProfileTarget = { kind: 'folder', name: folderAfter.name };
+  addProfileListChanges(changes, target, folderBefore?.profiles ?? [], folderAfter.profiles ?? []);
+  const appliedOnMoveBefore = folderBefore?.applyProfilesOnMove ?? false;
+  const appliedOnMoveAfter = folderAfter.applyProfilesOnMove ?? false;
+  if (appliedOnMoveBefore !== appliedOnMoveAfter) {
+    addProfileSettingChange(
+      changes,
+      target,
+      appliedOnMoveAfter ? 'apply-on-move-turned-on' : 'apply-on-move-turned-off',
+    );
+  }
+}
+
+/** A folder deleted takes its profiles with it, so its profiles get no line. */
+function folderProfileChanges(
+  before: readonly Folder[],
+  after: readonly Folder[],
+  renamedTo: ReadonlyMap<Folder, Folder>,
+): ConfigChange[] {
+  const changes = emptyProfileChanges();
+  const kept = new Set<Folder>();
+  for (const folderBefore of before) {
+    const folderAfter = renamedTo.get(folderBefore) ?? after.find((other) => sameName(other.name, folderBefore.name));
+    if (folderAfter !== undefined) {
+      kept.add(folderAfter);
+      describeFolderProfiles(changes, folderBefore, folderAfter);
+    }
+  }
+  for (const folderMade of after.filter((folder) => !kept.has(folder))) {
+    describeFolderProfiles(changes, undefined, folderMade);
+  }
+  return profileConfigChanges(changes);
 }
 
 /**
@@ -168,14 +210,7 @@ function folderChanges(beforeValue: unknown, afterValue: unknown): ConfigChange[
       return newName === undefined ? [] : [folderChange('Rename', `${folderBefore.name} to ${newName}`)];
     }),
     ...deleted.map((folderGone) => folderChange('Delete', folderGone.name)),
-    ...before.flatMap((folderBefore) => {
-      const folderAfter = renamedTo.get(folderBefore) ?? findIn(after, folderBefore.name);
-      return folderAfter !== undefined &&
-        (!sameValue(folderBefore.profiles ?? [], folderAfter.profiles ?? []) ||
-          (folderBefore.applyProfilesOnMove ?? false) !== (folderAfter.applyProfilesOnMove ?? false))
-        ? [folderChange('Update profiles for', folderAfter.name)]
-        : [];
-    }),
+    ...folderProfileChanges(before, after, renamedTo),
   ];
   const currentName = (name: string): string => newNameByOldName.get(name.toLowerCase()) ?? name;
   const filedBefore = folderOfEachRepository(before);
@@ -199,6 +234,7 @@ const preferenceLabels: Readonly<Record<string, string>> = {
   [hiddenRepositoriesKey]: 'hidden repositories',
   [hiddenOwnersKey]: 'hidden owners',
   [repositoryFoldersKey]: 'folders',
+  [repositoryProfilesKey]: 'profile assignments',
 };
 
 function changesOf(key: string, before: unknown, after: unknown): ConfigChange[] {
@@ -211,7 +247,14 @@ function changesOf(key: string, before: unknown, after: unknown): ConfigChange[]
   if (key === repositoryFoldersKey) {
     return folderChanges(before, after);
   }
+  if (key === repositoryProfilesKey) {
+    return assignmentChanges(before, after);
+  }
   return [];
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 /** What saving `after` over `before` changes, for the commit's message. */

@@ -135,6 +135,21 @@ describe('configCommitMessage', () => {
     ]);
   });
 
+  test('counts in the words a change gives for counting', () => {
+    const parts = ['assign lunchbox-labs/base', 'change full section ownership'].map((name): ConfigChange => ({
+      action: 'Update',
+      noun: 'profiles',
+      nouns: 'profiles',
+      nounQualifier: 'for repository lunchbox-labs/frontend-application',
+      name,
+      counted: { action: 'Make', noun: 'profile change', nouns: 'profile changes' },
+    }));
+
+    expect(subjectOf(configCommitMessage(parts))).toBe(
+      'Make 2 profile changes for repository lunchbox-labs/frontend-application',
+    );
+  });
+
   test('stops the body at its longest and counts the rest', () => {
     const names = Array.from({ length: 120 }, (_, index) => `octo/repository-${index}`);
     const body = configCommitMessage(names.map(hide)).split('\n').slice(2);

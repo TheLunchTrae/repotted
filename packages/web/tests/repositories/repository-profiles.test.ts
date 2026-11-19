@@ -10,12 +10,8 @@ import { repositoryFoldersKey } from '../../src/app/preferences/preference-chang
 import { type Change, SharedPreferences, preferencesFile } from '../../src/app/preferences/shared-preferences.js';
 import type { ProfileListing } from '../../src/app/profiles/profiles.js';
 import { reviewAssignedProfiles } from '../../src/app/repositories/profile-reviews.js';
-import {
-  profileVersion,
-  RepositoryProfiles,
-  repositoryProfilesKey,
-  tagsFor,
-} from '../../src/app/repositories/repository-profiles.js';
+import { profileVersion, RepositoryProfiles, tagsFor } from '../../src/app/repositories/repository-profiles.js';
+import { repositoryProfilesKey } from '../../src/app/repositories/saved-assignments.js';
 import * as files from '../../src/engine/files.js';
 import { mkdir, rm, writeFile } from '../../src/engine/files.js';
 
