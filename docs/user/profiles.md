@@ -179,6 +179,12 @@ GitHub's documented defaults for the parameters it requires. The plan shows
 each of these values. Other rule types need their required parameters in the
 profile.
 
+GitHub ignores the `actor_id` of an `OrganizationAdmin` or `EnterpriseOwner`
+bypass actor and reads it back as `1`, and a `DeployKey` has no ID. So the
+plan compares and sends `1` and `null` for these whatever the profile says,
+and an ID written by hand never shows as a change. Saving the profile from the
+web app or with `repotted profile` writes the same IDs into the file.
+
 A rule's parameters are checked against the values GitHub documents for its
 type, such as a `pull_request` rule's `allowed_merge_methods`, which needs at
 least one of `merge`, `squash`, and `rebase`, and a `merge_queue` rule's

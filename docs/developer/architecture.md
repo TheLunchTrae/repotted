@@ -189,7 +189,10 @@ preferences and marker commits use the same function.
 `--drop-` options. It works on the YAML document rather than the parsed value,
 so an edit changes only what differs and keeps comments, line endings, and
 indent width. Edits under `drafts` address settings and keys within their
-groups. Unknown fields are removed from the edited file, including drafts. The web app saves through it, so a profile edited
+groups. Unknown fields are removed from the edited file, including drafts,
+and bypass actor IDs GitHub ignores are set to the ones it keeps
+(`settleIgnoredBypassActorIds` in `profiles/bypass-actors.ts`, which the
+ruleset planner also uses on both sides of its comparison). The web app saves through it, so a profile edited
 both by hand and in the app keeps both sets of changes, except inside an
 entry the app rewrites. An edit writes nothing when the result is not a
 valid profile, and it refuses a list that shares parts through YAML anchors
