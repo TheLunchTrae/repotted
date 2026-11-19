@@ -1131,7 +1131,8 @@ interface RepositoriesProps {
   readonly onApply: PanelProps['onApply'];
   readonly onApplyProfiles: PanelProps['onApplyProfiles'];
   readonly assignments: RepositoryProfiles;
-  readonly onBatch: (repositories: readonly string[], profile: ComparedProfile) => void;
+  /** With `once`, starts a batch that changes settings without a profile. */
+  readonly onBatch: (repositories: readonly string[], profile: ComparedProfile | 'once') => void;
   readonly onReviewProfiles: (repositories: readonly string[]) => void;
   /** While an apply writes to GitHub, when no review can start. */
   readonly applyWriting: boolean;
@@ -1256,6 +1257,18 @@ function SelectedPanel({
           </>
         )}
       </form>
+      <button
+        class="button"
+        type="button"
+        onClick={() => {
+          onBatch(
+            selected.map((repository) => repository.full_name),
+            'once',
+          );
+        }}
+      >
+        Change settings once
+      </button>
       <div class="panel-actions">
         <button class="button button-quiet" type="button" onClick={onDeselectAll}>
           Deselect all

@@ -9,6 +9,7 @@ import type { Router } from '../../app/navigation/router.js';
 import { BarActions } from '../layout/action-bar.js';
 import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
+import { ProfileSettings } from '../profile-editor/profile-editor.js';
 
 const kinds: Readonly<Record<CompareRow['kind'], string>> = { changes: 'Changes', adds: 'Adds', removes: 'Removes' };
 
@@ -203,6 +204,7 @@ interface BatchProps {
 
 export function BatchPage({ batch, router }: BatchProps): JSX.Element {
   const [reviewingAgain, reviewAgain] = usePendingAction();
+  const [reviewing, review] = usePendingAction();
   const state = batch.state.value;
   const [confirming, setConfirming] = useState(false);
   const back = (
@@ -215,7 +217,10 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
       <div class="page">
         <div class="page-body">
           <h1>Apply a profile to several repositories</h1>
-          <p>Select repositories on the Repositories page, pick a profile, and choose Review apply.</p>
+          <p>
+            Select repositories on the Repositories page, then pick a profile and choose Review apply, or choose Change
+            settings once.
+          </p>
           <p>{back}</p>
         </div>
       </div>
@@ -226,6 +231,25 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
   const members = batch.members.value;
   const refused = state.kind === 'reviewed' ? state.refused : [];
   const repositories = (amount: number): string => (amount === 1 ? '1 repository' : `${amount} repositories`);
+  const editor = batch.editor.value;
+  const discard = (
+    <button
+      class="button button-quiet"
+      type="button"
+      disabled={reviewingOrApplying}
+      onClick={() => {
+        run(
+          batch.close().then(() => {
+            if (batch.state.value.kind === 'idle') {
+              router.go('/');
+            }
+          }),
+        );
+      }}
+    >
+      Discard batch
+    </button>
+  );
   return (
     <div class="page">
       <article class="page-body" aria-labelledby="batch-title">
@@ -238,20 +262,31 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
             </h1>
             <p class="muted" role="status">
               {(state.kind === 'reviewing' || state.kind === 'applying') && <Spinner />}
-              {state.kind === 'reviewing'
-                ? 'Reading from GitHub…'
-                : state.kind === 'applying'
-                  ? `Writing to GitHub: ${state.results.length} of ${state.total} done…`
-                  : state.kind === 'failed'
-                    ? "The batch couldn't be reviewed."
-                    : state.kind === 'applied'
-                      ? state.left === 0
-                        ? 'Every repository is finished, and the batch has ended.'
-                        : `${repositories(state.left)} didn't finish and ${state.left === 1 ? 'is' : 'are'} still in the batch.`
-                      : ready.length === 0
-                        ? 'No repository has changes that can be written.'
-                        : `${repositories(ready.length)} with changes to write. Nothing is written until you apply.`}
+              {state.kind === 'editing'
+                ? `Step 1 of 2: the settings to change on ${repositories(state.repositories.length)}, this once. Nothing else on them is touched.`
+                : state.kind === 'reviewing'
+                  ? 'Reading from GitHub…'
+                  : state.kind === 'applying'
+                    ? `Writing to GitHub: ${state.results.length} of ${state.total} done…`
+                    : state.kind === 'failed'
+                      ? "The batch couldn't be reviewed."
+                      : state.kind === 'applied'
+                        ? state.left === 0
+                          ? 'Every repository is finished, and the batch has ended.'
+                          : `${repositories(state.left)} didn't finish and ${state.left === 1 ? 'is' : 'are'} still in the batch.`
+                        : ready.length === 0
+                          ? 'No repository has changes that can be written.'
+                          : `${repositories(ready.length)} with changes to write. Nothing is written until you apply.`}
             </p>
+            {state.kind === 'editing' && (
+              <ul class="batch-repositories muted" aria-label="Repositories to change">
+                {state.repositories.map((repository) => (
+                  <li key={repository} class="mono">
+                    {repository}
+                  </li>
+                ))}
+              </ul>
+            )}
             {state.kind === 'applying' && (
               <progress
                 class="batch-progress"
@@ -276,6 +311,34 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
             {state.message}
           </p>
         )}
+        {state.kind === 'editing' && editor !== undefined && (
+          <ProfileSettings
+            key={editor.file}
+            name=""
+            editor={editor}
+            ownerTypeHasPushRulesets={editor.ownerType.value !== 'user'}
+            saving={{
+              save: () => editor.save((work) => work()),
+              discardDraft: () => Promise.resolve(),
+              onGitHub: false,
+              saveLabel: 'Save edits',
+              extraBarActions: discard,
+              primaryActionInsteadOfSave: (
+                <PendingButton
+                  pending={reviewing}
+                  class="button button-primary"
+                  type="button"
+                  disabled={reviewing || editor.saving.value || (editor.dirty.value && !editor.canSave.value)}
+                  onClick={() => {
+                    run(review(() => batch.review()));
+                  }}
+                >
+                  Review changes
+                </PendingButton>
+              ),
+            }}
+          />
+        )}
         {(state.kind === 'applying' || state.kind === 'applied') && state.results.length > 0 && (
           <ul class="rows" role="list" aria-label="How each repository ended">
             {state.results.map((result) => (
@@ -290,7 +353,11 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
           <>
             {refused.length > 0 && (
               <div class="notice notice-drift" role="status">
-                <p>Some repositories kept the change:</p>
+                <p>
+                  {editor === undefined
+                    ? 'Some repositories kept the change:'
+                    : "Some repositories couldn't take the edits, so they are left out:"}
+                </p>
                 <ul>
                   {refused.map((item) => (
                     <li key={item}>{item}</li>
@@ -298,7 +365,7 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                 </ul>
               </div>
             )}
-            {batch.addOffer.value !== undefined && (
+            {editor === undefined && batch.addOffer.value !== undefined && (
               <div class="assign-choice">
                 <label class="check">
                   <input
@@ -320,68 +387,70 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
                 </p>
               </div>
             )}
-            <section class="settings-group" aria-label="All repositories">
-              <div>
-                <h2>All repositories</h2>
-                <p class="muted small">
-                  Each change that can be left out, and the repositories it affects. Repositories that need access wait
-                  until access is granted. Leaving a change out everywhere leaves it out of every repository's apply;
-                  the profile keeps it.
-                </p>
-              </div>
-              {batch.changes.value.length > 0 && (
-                <ul class="rows" role="list">
-                  {batch.changes.value.map((change) => (
-                    <li key={change.key} class="compare-row">
-                      <strong class="compare-what">{change.label}</strong>
-                      <div class="compare-values muted">
-                        <ul class="batch-repositories small" aria-label={`Repositories affected by ${change.label}`}>
-                          {change.repositories.map((repository) => (
-                            <li key={repository}>
-                              <span class="mono">{repository}</span>
-                              {members.find((member) => member.repository === repository)?.status === 'needs-access' &&
-                                ' (needs access)'}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      <button
-                        class="button button-quiet button-small"
-                        type="button"
-                        disabled={reviewingOrApplying}
-                        aria-label={`Leave out ${change.label} everywhere`}
-                        onClick={() => {
-                          run(batch.everywhere(change.key, true));
-                        }}
-                      >
-                        Leave out everywhere
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {batch.leftOut.value.length > 0 && (
-                <ul class="rows" role="list" aria-label="Left out">
-                  {batch.leftOut.value.map((key) => (
-                    <li key={key} class="compare-row">
-                      <strong class="compare-what">{exclusionLabel(key)}</strong>
-                      <span class="compare-values muted">Left out</span>
-                      <button
-                        class="button button-quiet button-small"
-                        type="button"
-                        disabled={reviewingOrApplying}
-                        aria-label={`Put back ${exclusionLabel(key)} everywhere`}
-                        onClick={() => {
-                          run(batch.everywhere(key, false));
-                        }}
-                      >
-                        Put back everywhere
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            {editor === undefined && (
+              <section class="settings-group" aria-label="All repositories">
+                <div>
+                  <h2>All repositories</h2>
+                  <p class="muted small">
+                    Each change that can be left out, and the repositories it affects. Repositories that need access
+                    wait until access is granted. Leaving a change out everywhere leaves it out of every repository's
+                    apply; the profile keeps it.
+                  </p>
+                </div>
+                {batch.changes.value.length > 0 && (
+                  <ul class="rows" role="list">
+                    {batch.changes.value.map((change) => (
+                      <li key={change.key} class="compare-row">
+                        <strong class="compare-what">{change.label}</strong>
+                        <div class="compare-values muted">
+                          <ul class="batch-repositories small" aria-label={`Repositories affected by ${change.label}`}>
+                            {change.repositories.map((repository) => (
+                              <li key={repository}>
+                                <span class="mono">{repository}</span>
+                                {members.find((member) => member.repository === repository)?.status ===
+                                  'needs-access' && ' (needs access)'}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <button
+                          class="button button-quiet button-small"
+                          type="button"
+                          disabled={reviewingOrApplying}
+                          aria-label={`Leave out ${change.label} everywhere`}
+                          onClick={() => {
+                            run(batch.everywhere(change.key, true));
+                          }}
+                        >
+                          Leave out everywhere
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {batch.leftOut.value.length > 0 && (
+                  <ul class="rows" role="list" aria-label="Left out">
+                    {batch.leftOut.value.map((key) => (
+                      <li key={key} class="compare-row">
+                        <strong class="compare-what">{exclusionLabel(key)}</strong>
+                        <span class="compare-values muted">Left out</span>
+                        <button
+                          class="button button-quiet button-small"
+                          type="button"
+                          disabled={reviewingOrApplying}
+                          aria-label={`Put back ${exclusionLabel(key)} everywhere`}
+                          onClick={() => {
+                            run(batch.everywhere(key, false));
+                          }}
+                        >
+                          Put back everywhere
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
             <div class="groups">
               {members.map((member) => (
                 <Member
@@ -403,62 +472,61 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
             }}
           />
         )}
-        <div class="save-bar">
-          <BarActions
-            mainAction={
-              <PendingButton
-                pending={state.kind === 'applying'}
-                class="button button-primary"
-                type="button"
-                disabled={state.kind !== 'reviewed' || (ready.length === 0 && !batch.canRecordWithoutChanges.value)}
-                onClick={() => {
-                  if (batch.canRecordWithoutChanges.value) {
-                    run(batch.apply());
-                  } else {
-                    setConfirming(true);
-                  }
-                }}
-              >
-                {batch.canRecordWithoutChanges.value
-                  ? 'Mark as applied'
-                  : ready.length === 0
-                    ? 'Apply'
-                    : `Apply to ${repositories(ready.length)}`}
-              </PendingButton>
-            }
-            otherActions={
-              <>
-                <button
-                  class="button button-quiet"
-                  type="button"
-                  disabled={reviewingOrApplying}
-                  onClick={() => {
-                    run(
-                      batch.close().then(() => {
-                        if (batch.state.value.kind === 'idle') {
-                          router.go('/');
-                        }
-                      }),
-                    );
-                  }}
-                >
-                  Discard batch
-                </button>
+        {state.kind !== 'editing' && (
+          <div class="save-bar">
+            <BarActions
+              mainAction={
                 <PendingButton
-                  pending={reviewingAgain}
-                  class="button"
+                  pending={state.kind === 'applying'}
+                  class="button button-primary"
                   type="button"
-                  disabled={reviewingOrApplying || !batch.canReviewAgain.value}
+                  disabled={state.kind !== 'reviewed' || (ready.length === 0 && !batch.canRecordWithoutChanges.value)}
                   onClick={() => {
-                    run(reviewAgain(() => batch.reviewAgain()));
+                    if (batch.canRecordWithoutChanges.value) {
+                      run(batch.apply());
+                    } else {
+                      setConfirming(true);
+                    }
                   }}
                 >
-                  Review again
+                  {batch.canRecordWithoutChanges.value
+                    ? 'Mark as applied'
+                    : ready.length === 0
+                      ? 'Apply'
+                      : `Apply to ${repositories(ready.length)}`}
                 </PendingButton>
-              </>
-            }
-          />
-        </div>
+              }
+              otherActions={
+                <>
+                  {discard}
+                  {editor !== undefined && (
+                    <button
+                      class="button"
+                      type="button"
+                      disabled={reviewingOrApplying || !batch.canEdit.value}
+                      onClick={() => {
+                        run(batch.backToEdits());
+                      }}
+                    >
+                      Back to edits
+                    </button>
+                  )}
+                  <PendingButton
+                    pending={reviewingAgain}
+                    class="button"
+                    type="button"
+                    disabled={reviewingOrApplying || !batch.canReviewAgain.value}
+                    onClick={() => {
+                      run(reviewAgain(() => batch.reviewAgain()));
+                    }}
+                  >
+                    Review again
+                  </PendingButton>
+                </>
+              }
+            />
+          </div>
+        )}
       </article>
     </div>
   );

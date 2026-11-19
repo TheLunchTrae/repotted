@@ -471,6 +471,33 @@ export async function editStagedApply(file: string, edits: readonly StagedEdit[]
   );
 }
 
+const copiedEditKeys = [
+  'owner_type',
+  ...settingsSections,
+  'autolinks',
+  'actions_policies',
+  'rulesets',
+  'environments',
+  'labels',
+] as const;
+
+/**
+ * `to` takes the one-off edits of `from` in place of its own. What it applies
+ * to, starts from, leaves out, and owns stays. The file changes only when the
+ * result is a valid staged apply.
+ */
+export async function copyStagedEdits(from: string, to: string): Promise<StagedApply> {
+  const { layer } = (await resolveLayer(from, stagedLayer)).head;
+  const uncopied = Object.keys(layer).filter(
+    (key) => key !== 'extends' && !(copiedEditKeys as readonly string[]).includes(key),
+  );
+  if (uncopied.length > 0) {
+    throw new ProfileError(`Cannot copy the edits of ${from}: it sets ${uncopied.join(', ')}`);
+  }
+  const edits = copiedEditKeys.map((key): ProfileEdit => ({ path: [key], value: layer[key] }));
+  return staged(await editLayer(to, edits, stagedLayer));
+}
+
 /** Nothing is written, so an editor can show what its unsaved edits give before it saves them. */
 export async function previewStagedApply(
   file: string,

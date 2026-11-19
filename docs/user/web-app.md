@@ -407,6 +407,26 @@ have left the batch, and the batch ends with the last of them. Leaving the
 page, reloading, or clicking **Discard batch** discards the pending batch.
 Changes already being written to GitHub finish even if you leave the page.
 
+### Change settings once on several repositories
+
+To make the same change to several repositories without a profile, select
+them on the **Repositories** page and click **Change settings once** in the
+panel. Like [a change to one repository](#apply-changes-to-a-repository),
+it has two steps.
+
+The first step shows the one-off edits, in the same editor as a profile.
+Every repository in the batch gets the same edits, and nothing else on them
+is touched. Click **Review changes** to review them; it waits while an edit
+isn't valid. Settings the Repotted App's installation can't change aren't
+turned off here, since the repositories can differ; the review marks them
+instead.
+
+The second step is the batch review described above, with each change
+marked **One-off edit**. A repository whose apply can't take the edits is
+named and left out of the batch. Click **Back to edits** to change the edits for
+every repository, then **Review changes** again. Apply works as for any
+batch, and the repositories keep no record of the change.
+
 ## Profiles
 
 A profile is a YAML file that describes how a repository should be set up.

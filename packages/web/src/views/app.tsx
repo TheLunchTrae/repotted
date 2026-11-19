@@ -159,7 +159,11 @@ function SignedIn({
   const openingProtection = useRef(false);
   useEffect(() => {
     const ask = (event: BeforeUnloadEvent): void => {
-      if (profiles.unsaved.value.size > 0 || apply.editor.value?.dirty.value === true) {
+      if (
+        profiles.unsaved.value.size > 0 ||
+        apply.editor.value?.dirty.value === true ||
+        batch.editor.value?.dirty.value === true
+      ) {
         event.preventDefault();
       }
     };
@@ -167,7 +171,7 @@ function SignedIn({
     return () => {
       window.removeEventListener('beforeunload', ask);
     };
-  }, [profiles, apply]);
+  }, [profiles, apply, batch]);
   const path = router.path.value;
   const library = definitionTypes.find((definition) => definition.path === path);
   const previewedBranch = path === '/profiles' ? (new URLSearchParams(router.search.value).get('preview') ?? '') : '';
@@ -280,9 +284,9 @@ function SignedIn({
             }}
             onBatch={(names, profile) => {
               run(
-                batch.start(names, profile).then(() => {
+                (profile === 'once' ? batch.startWithoutProfile(names) : batch.start(names, profile)).then(() => {
                   // The selection has done its work once a batch started from it holds the repositories.
-                  if (batch.state.value.kind === 'reviewed') {
+                  if (batch.state.value.kind === 'reviewed' || batch.state.value.kind === 'editing') {
                     repositories.deselectAll();
                   }
                 }),

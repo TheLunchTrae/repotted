@@ -16,6 +16,7 @@ import { ProfileError, resolveProfile, resolveProfilesTogether } from '../profil
 import { hexDigest } from '../shared/bytes.js';
 import { replaceFile } from '../shared/files.js';
 import {
+  copyStagedEdits,
   createStagedApply,
   editStagedApply,
   isExclusionKey,
@@ -482,6 +483,26 @@ export async function editEverywhere(folder: string, key: string, excluded: bool
         ? `Every repository in the batch already excludes ${key}`
         : `Cannot exclude ${key}: no repository's profile in the batch sets what it names`,
     );
+  }
+  return { batch, changed, refused };
+}
+
+/**
+ * Every member's one-off edits become those of the staged apply `from`, so
+ * each repository gets the same ones. Members left out change too, so putting
+ * one back finds it as the rest.
+ */
+export async function copyEditsEverywhere(folder: string, from: string): Promise<EverywhereResult> {
+  const batch = await readBatch(folder);
+  const changed: string[] = [];
+  const refused: { repository: string; message: string }[] = [];
+  for (const member of batch.members) {
+    try {
+      await copyStagedEdits(from, member.file);
+      changed.push(member.repository);
+    } catch (error) {
+      refused.push({ repository: member.repository, message: error instanceof Error ? error.message : String(error) });
+    }
   }
   return { batch, changed, refused };
 }
