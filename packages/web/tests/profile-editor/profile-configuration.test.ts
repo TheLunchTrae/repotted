@@ -319,6 +319,18 @@ test.each(['ruleset', 'environment'])('entry names cannot redirect a duplicate r
   expect(resolved.profile.labels).toEqual([{ name, color: 'abcdef' }]);
 });
 
+test('the preview names the rulesets whose ignored bypass actor IDs a save settles', async () => {
+  const editor = await opened(
+    'rulesets:\n  - name: Main\n    bypass_actors: [{ actor_id: 7, actor_type: OrganizationAdmin, bypass_mode: always }]\n',
+  );
+  await editor.set(setting(editor, 'repository.has_wiki').field, true);
+  await editor.openPreview();
+  expect(editor.preview.value?.rulesetsWithSettledBypassActorIds).toEqual(['Main']);
+  await editor.save(write);
+  expect(editor.saveError.value).toBeUndefined();
+  expect(await readFile(file, 'utf8')).toContain('actor_id: 1, actor_type: OrganizationAdmin');
+});
+
 test('unknown fields alone can be saved away without changing known configuration', async () => {
   const text = '# Keep this comment\nunknown: true\nrepository: { has_wiki: true, has_wikki: false }\n';
   const editor = await opened(text);

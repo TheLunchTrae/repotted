@@ -486,6 +486,52 @@ describe('editProfile', () => {
     });
   });
 
+  test('keeps comments and block style when it sets ignored bypass actor IDs, in drafts too', async () => {
+    const file = await write(
+      'edit-bypass-ids-block.yaml',
+      [
+        'rulesets:',
+        '  - name: Main',
+        '    bypass_actors:',
+        '      - actor_id: 7 # written by hand',
+        '        actor_type: OrganizationAdmin',
+        '        bypass_mode: always',
+        '      - actor_id: !!int 4',
+        '        actor_type: DeployKey',
+        '        bypass_mode: always',
+        '  - name: Later',
+        '    draft: true',
+        '    bypass_actors:',
+        '      - { actor_id: 9, actor_type: EnterpriseOwner, bypass_mode: always }',
+        '',
+      ].join('\n'),
+    );
+
+    await editProfile(file, [{ path: ['repository', 'has_wiki'], value: false }]);
+    await editProfile(file, [{ path: ['repository', 'has_wiki'], value: true }]);
+
+    expect(await readFile(file, 'utf8')).toBe(
+      [
+        'rulesets:',
+        '  - name: Main',
+        '    bypass_actors:',
+        '      - actor_id: 1 # written by hand',
+        '        actor_type: OrganizationAdmin',
+        '        bypass_mode: always',
+        '      - actor_id: null',
+        '        actor_type: DeployKey',
+        '        bypass_mode: always',
+        '  - name: Later',
+        '    draft: true',
+        '    bypass_actors:',
+        '      - { actor_id: 1, actor_type: EnterpriseOwner, bypass_mode: always }',
+        'repository:',
+        '  has_wiki: true',
+        '',
+      ].join('\n'),
+    );
+  });
+
   test('leaves the file as it was when the result is not a valid profile', async () => {
     const text = 'merge: { allow_merge_commit: false, allow_squash_merge: false }\n';
     const file = await write('edit-invalid.yaml', text);

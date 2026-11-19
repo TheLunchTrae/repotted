@@ -16,6 +16,7 @@ import {
   ProfileError,
   readProfileForEditing,
   resolveProfile,
+  rulesetsWithBypassActorIdsSettledBySave,
   settingPath,
   settingRules,
   settingValueProblems,
@@ -233,6 +234,7 @@ export interface SaveProblem {
 export interface SavePreview {
   readonly reusableDefinitions?: readonly ReusableDefinition[];
   readonly removedUnknownFields?: readonly string[];
+  readonly rulesetsWithSettledBypassActorIds?: readonly string[];
   readonly lines: readonly (DiffLine | DiffFold)[];
   readonly changedLineCount: number;
   readonly draftChangeCount: number;
@@ -1047,6 +1049,7 @@ export class ProfileEditor {
         return;
       }
       const lines = diffLines(yamlLines(before), yamlLines(after));
+      const rulesetsWithSettledBypassActorIds = rulesetsWithBypassActorIdsSettledBySave(before.profile, after.profile);
       this.preview.value = {
         reusableDefinitions: definitions,
         lines: foldUnchanged(lines),
@@ -1054,6 +1057,7 @@ export class ProfileEditor {
         draftChangeCount: drafted,
         unsavedChangeCount: unsaved,
         ...((before.unknownFields?.length ?? 0) === 0 ? {} : { removedUnknownFields: before.unknownFields }),
+        ...(rulesetsWithSettledBypassActorIds.length === 0 ? {} : { rulesetsWithSettledBypassActorIds }),
       };
     } catch (error) {
       if (turn === this.#opens) {

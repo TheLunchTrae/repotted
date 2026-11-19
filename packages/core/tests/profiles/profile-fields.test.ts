@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest';
 import { parse } from 'yaml';
 
-import { withoutUnknownProfileFields } from '../../src/profiles/profile-fields.js';
+import { tidiedProfileText } from '../../src/profiles/profile-fields.js';
 
 test('cleanup removes unknown fields while retaining invalid known values, drafts, and open records', () => {
-  const cleaned = withoutUnknownProfileFields(
+  const cleaned = tidiedProfileText(
     `# Keep the header.
 unknown: ignored
 repository:
@@ -43,7 +43,7 @@ custom_properties: { arbitrary_name: [one, two] }
 });
 
 test('cleanup retains each use of shared YAML values even when its anchor is removed or pruned', () => {
-  const cleaned = withoutUnknownProfileFields(`repository: &shared
+  const cleaned = tidiedProfileText(`repository: &shared
   has_wiki: true
   allow_merge_commit: false
 merge: *shared
@@ -58,15 +58,22 @@ drafts: { repository: *settings }
 });
 
 test('cleanup keeps alias keys and complex or null keys in open records', () => {
-  const alias = withoutUnknownProfileFields('unknown: &key has_wiki\nrepository:\n  ? *key\n  : true\n');
+  const alias = tidiedProfileText('unknown: &key has_wiki\nrepository:\n  ? *key\n  : true\n');
   expect(parse(alias)).toEqual({ repository: { has_wiki: true } });
   const text =
     'unknown: true\nhidden: &key one\ncustom_properties: { null: wrong }\nrulesets:\n  - name: Main\n    conditions:\n      ? [one, two]\n      : { future: true }\n      ? [*key, three]\n      : { future: true }\n';
   const before: unknown = parse(text);
-  const after: unknown = parse(withoutUnknownProfileFields(text));
+  const after: unknown = parse(tidiedProfileText(text));
   if (typeof before !== 'object' || before === null || typeof after !== 'object' || after === null) {
     throw new Error('Expected profile maps');
   }
   expect(Reflect.get(after, 'custom_properties')).toEqual(Reflect.get(before, 'custom_properties'));
   expect(Reflect.get(after, 'rulesets')).toEqual(Reflect.get(before, 'rulesets'));
+});
+
+test('tidying sets bypass actor IDs GitHub ignores even when no field is unknown', () => {
+  const text =
+    'rulesets:\n  - name: Main\n    bypass_actors:\n      - { actor_id: 7, actor_type: OrganizationAdmin, bypass_mode: always }\n';
+  expect(tidiedProfileText(text)).toBe(text.replace('actor_id: 7', 'actor_id: 1'));
+  expect(tidiedProfileText('repository: { has_wiki: true }\n')).toBe('repository: { has_wiki: true }\n');
 });

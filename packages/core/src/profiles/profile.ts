@@ -20,10 +20,9 @@ import { z } from 'zod';
 
 import { isDeepEqual } from '../shared/equal.js';
 import { replaceFile } from '../shared/files.js';
-import { settleIgnoredBypassActorIds } from './bypass-actors.js';
 import type { ConfigurationProblem } from './editing.js';
 import { describeOwnerType, draftOwnerConflicts, type OwnerConflict, ownerConflicts, type OwnerType } from './owner.js';
-import { moveLeadingCommentAndBlankLine, profileFields, removeUnknownProfileFields } from './profile-fields.js';
+import { moveLeadingCommentAndBlankLine, profileFields, tidyProfileDocument } from './profile-fields.js';
 import {
   actionsSettings,
   actionPolicyEntry,
@@ -175,10 +174,7 @@ const profileLayer: Layer<LayerRead> = {
   noun: 'profile',
   schema: z.preprocess((value) => profileFields(value).known, profileFile).transform((layer) => ({ layer })),
   ownTopLevelKeys: new Set(['references', ...Object.keys(profileReferences.shape).map((key) => `references.${key}`)]),
-  tidyBeforeSave: (document) => {
-    removeUnknownProfileFields(document);
-    settleIgnoredBypassActorIds(document);
-  },
+  tidyBeforeSave: tidyProfileDocument,
   check: () => undefined,
 };
 

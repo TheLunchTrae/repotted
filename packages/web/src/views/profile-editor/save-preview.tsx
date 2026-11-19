@@ -135,6 +135,12 @@ export function SavePreviewDialog({ name, editor, saving, preview }: SavePreview
         {(preview.removedUnknownFields?.length ?? 0) > 0 && (
           <p class="muted small">Saving removes unrecognized keys: {preview.removedUnknownFields?.join(', ')}.</p>
         )}
+        {(preview.rulesetsWithSettledBypassActorIds?.length ?? 0) > 0 && (
+          <p class="muted small">
+            Saving sets bypass actor IDs that GitHub ignores to the ones it keeps, in:{' '}
+            {preview.rulesetsWithSettledBypassActorIds?.join(', ')}.
+          </p>
+        )}
         <div class="form-actions">
           <button class="button button-primary" type="submit" value="applies" disabled={!editor.canSave.value}>
             Save

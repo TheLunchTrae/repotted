@@ -225,6 +225,33 @@ drafts:
     expect((await createPlan(github, repo, desired)).changes).toEqual([]);
   });
 
+  test('still shows a bypass mode change for an actor whose ID GitHub ignores', async () => {
+    const github = new FakeGitHub({
+      rulesets: [
+        {
+          id: 9,
+          name: 'Main: Owners Bypass',
+          target: 'branch',
+          enforcement: 'active',
+          bypass_actors: [{ actor_id: 1, actor_type: 'OrganizationAdmin', bypass_mode: 'always' }],
+          conditions: mainBranch,
+          rules: [{ type: 'deletion' }],
+        },
+      ],
+    });
+    const desired: Profile = {
+      rulesets: [
+        {
+          name: 'Main: Owners Bypass',
+          bypass_actors: [{ actor_id: 7, actor_type: 'OrganizationAdmin', bypass_mode: 'pull_request' }],
+        },
+      ],
+    };
+
+    const plan = await createPlan(github, repo, desired);
+    expect(plan.changes.map((change) => change.fields.map((field) => field.field))).toEqual([['bypass_actors']]);
+  });
+
   test('sends GitHub the bypass actor IDs it keeps when a ruleset changes', async () => {
     const github = new FakeGitHub({ rulesets: [] });
     const desired: Profile = {
