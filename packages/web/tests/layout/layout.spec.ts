@@ -1212,7 +1212,7 @@ test('the bypass list keeps the keyboard in place as actors come and go', async 
   await expect(page.getByRole('checkbox', { name: 'Select Write', exact: true })).toBeFocused();
 
   await page.getByRole('checkbox', { name: 'Select all', exact: true }).check();
-  await page.getByText('Set mode', { exact: true }).click();
+  await page.locator('summary', { hasText: 'Set mode' }).click();
   await page.getByRole('button', { name: 'Exempt', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'When Write can bypass' })).toHaveValue('exempt');
   await expect(page.getByRole('combobox', { name: 'When Repository admin can bypass' })).toHaveValue('exempt');

@@ -105,6 +105,25 @@ export function withBypassActorsRemoved(entry: Entry, keys: ReadonlySet<string>)
   );
 }
 
+/** A row's own edits go by its place in the list, since a hand-written list can name an actor twice. */
+export function withBypassActorAtIndexRemoved(entry: Entry, index: number): Entry {
+  return withKey(
+    entry,
+    'bypass_actors',
+    bypassActors(entry).filter((_actor, at) => at !== index),
+  );
+}
+
+export function withBypassModeAtIndex(entry: Entry, index: number, mode: BypassMode): Entry {
+  return withKey(
+    entry,
+    'bypass_actors',
+    bypassActors(entry).map((actor, at) =>
+      at === index && bypassModeFits(actor, mode, entry['target']) ? { ...actor, bypass_mode: mode } : actor,
+    ),
+  );
+}
+
 /** An actor the mode doesn't fit keeps the mode it has. */
 export function withBypassMode(entry: Entry, keys: ReadonlySet<string>, mode: BypassMode): Entry {
   return withKey(

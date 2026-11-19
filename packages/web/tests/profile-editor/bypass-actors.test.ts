@@ -10,9 +10,11 @@ import {
   organizationAdminBypassActor,
   parseBypassActorId,
   withBypassActorAdded,
+  withBypassActorAtIndexRemoved,
   withBypassActorsRemoved,
   withBypassListManaged,
   withBypassMode,
+  withBypassModeAtIndex,
 } from '../../src/app/profile-editor/bypass-actors.js';
 
 const admin = { actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'exempt' };
@@ -80,6 +82,20 @@ test('a list that names someone twice blocks the save, even with two modes', () 
     }),
   ).toBeDefined();
   expect(bypassListProblem(saved)).toBeUndefined();
+});
+
+test('a row named twice is removed or changed alone, so the other stays', () => {
+  const twice = { target: 'branch', bypass_actors: [admin, dependabot, { ...admin, bypass_mode: 'always' }] };
+  expect(withBypassActorAtIndexRemoved(twice, 2)['bypass_actors']).toEqual([admin, dependabot]);
+  expect(bypassListProblem(withBypassActorAtIndexRemoved(twice, 2))).toBeUndefined();
+  expect(withBypassModeAtIndex(twice, 0, 'pull_request')['bypass_actors']).toEqual([
+    { ...admin, bypass_mode: 'pull_request' },
+    dependabot,
+    { ...admin, bypass_mode: 'always' },
+  ]);
+  expect(withBypassModeAtIndex({ ...twice, target: 'tag' }, 0, 'pull_request')['bypass_actors']).toEqual(
+    twice.bypass_actors,
+  );
 });
 
 test('pull requests only, with the target left to each repository, says where it works', () => {

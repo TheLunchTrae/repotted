@@ -20,9 +20,11 @@ import {
   organizationAdminBypassActor,
   parseBypassActorId,
   withBypassActorAdded,
+  withBypassActorAtIndexRemoved,
   withBypassActorsRemoved,
   withBypassListManaged,
   withBypassMode,
+  withBypassModeAtIndex,
 } from '../../app/profile-editor/bypass-actors.js';
 import type { Entry } from '../../app/profile-editor/entry-forms.js';
 import { useMenuPanelKeptOnPage } from '../layout/menu-placement.js';
@@ -127,23 +129,23 @@ function AddMenu({ entry, organizationActorsOffered, onAdd, onOpenForm }: AddMen
 }
 
 interface SetModeMenuProps {
+  readonly fitsAnySelected: (mode: BypassMode) => boolean;
   readonly onSet: (mode: BypassMode) => void;
 }
 
-function SetModeMenu({ onSet }: SetModeMenuProps): JSX.Element {
+function SetModeMenu({ fitsAnySelected, onSet }: SetModeMenuProps): JSX.Element {
   const menu = useDismissibleMenu();
   useMenuPanelKeptOnPage(menu);
   return (
     <details class="menu" ref={menu}>
-      <summary class="button button-small" aria-label="Set when the selected ones can bypass">
-        Set mode
-      </summary>
+      <summary class="button button-small">Set mode</summary>
       <div class="menu-panel">
         {bypassModes.map(([mode, label]) => (
           <button
             key={mode}
             class="menu-item"
             type="button"
+            disabled={!fitsAnySelected(mode)}
             onClick={() => {
               closeMenuAndFocusItsButton(menu);
               onSet(mode);
@@ -254,11 +256,8 @@ function AddApp({ appLookup, isListed, onAdd, onClose }: AddAppProps): JSX.Eleme
           pending={appLookup?.state.value.kind === 'finding'}
           class="button button-small"
           type="submit"
-          disabled={
-            readyIsListed ||
-            state.kind === 'finding' ||
-            (ready === undefined && (slug === undefined || appLookup === undefined))
-          }
+          disabled={ready === undefined && (slug === undefined || appLookup === undefined)}
+          aria-disabled={readyIsListed || undefined}
         >
           {ready === undefined ? 'Find' : 'Add'}
         </PendingButton>
@@ -412,13 +411,20 @@ export function BypassList({
     }
     setSelectedKeys(next);
   };
-  const remove = (keys: ReadonlySet<string>, firstRemovedIndex: number): void => {
+  const focusRowAfterRemoval = (firstRemovedIndex: number): void => {
     focusAfterEntryChange((element) => {
       const rows = rowCheckboxes(element);
       return rows[firstRemovedIndex] ?? rows.at(-1) ?? focusAddButton(element);
     });
+  };
+  const remove = (keys: ReadonlySet<string>, firstRemovedIndex: number): void => {
+    focusRowAfterRemoval(firstRemovedIndex);
     setSelectedKeys(new Set([...selected].filter((key) => !keys.has(key))));
     change(withBypassActorsRemoved(entry, keys));
+  };
+  const removeRow = (index: number): void => {
+    focusRowAfterRemoval(index);
+    change(withBypassActorAtIndexRemoved(entry, index));
   };
   return (
     <section class="settings-group" aria-label="Bypass list" data-entry-field="bypass-list" tabIndex={-1} ref={section}>
@@ -458,6 +464,11 @@ export function BypassList({
               <div class="bypass-selection">
                 <strong>{selected.size} selected</strong>
                 <SetModeMenu
+                  fitsAnySelected={(mode) =>
+                    actors.some(
+                      (actor) => selected.has(bypassActorKey(actor)) && bypassModeFits(actor, mode, entry['target']),
+                    )
+                  }
                   onSet={(mode) => {
                     change(withBypassMode(entry, selected, mode));
                   }}
@@ -504,12 +515,13 @@ export function BypassList({
             )}
             {actors.map((actor, index) => {
               const key = bypassActorKey(actor);
+              const earlierWithKey = actors.slice(0, index).filter((earlier) => bypassActorKey(earlier) === key).length;
               const { name, kind } = describeBypassActor(actor, appNames);
               const problem = bypassActorProblem(actor, entry['target']);
               const note = bypassActorNote(actor, entry['target']);
               const mode = typeof actor['bypass_mode'] === 'string' ? actor['bypass_mode'] : 'always';
               return (
-                <div class="bypass-row" key={`${key}#${String(index)}`}>
+                <div class="bypass-row" key={`${key}#${String(earlierWithKey)}`}>
                   <input
                     type="checkbox"
                     data-bypass-row={index}
@@ -537,7 +549,7 @@ export function BypassList({
                     onChange={(event) => {
                       const chosen = event.currentTarget.value;
                       if (isBypassMode(chosen)) {
-                        change(withBypassMode(entry, new Set([key]), chosen));
+                        change(withBypassModeAtIndex(entry, index, chosen));
                       }
                     }}
                   >
@@ -556,7 +568,7 @@ export function BypassList({
                     type="button"
                     aria-label={`Remove ${name}`}
                     onClick={() => {
-                      remove(new Set([key]), index);
+                      removeRow(index);
                     }}
                   >
                     Remove
