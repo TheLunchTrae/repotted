@@ -430,6 +430,7 @@ test('a batch that changes settings once gives every repository the same edits a
   await batch.apply();
 
   expect(batch.state.value).toMatchObject({ kind: 'applied', left: 0 });
+  expect(batch.editor.value).toBeUndefined();
   expect(of('lunch/app').state.repository).toMatchObject({ has_wiki: false, has_projects: false });
   expect(of('lunch/api').state.repository).toMatchObject({ has_wiki: false, has_projects: false });
   expect(await pending()).toEqual([]);
@@ -483,4 +484,50 @@ test('a batch of a profile has no edits to go back to', async () => {
   expect(batch.canEdit.value).toBe(false);
   await batch.backToEdits();
   expect(batch.state.value).toMatchObject({ kind: 'reviewed' });
+});
+
+test('a repository that refuses the edits is named and left out, so it is not applied with others', async () => {
+  const { github, of } = fleet('lunch/app', 'lunch/api');
+  const batch = new BatchApply(github, () => undefined);
+  await batch.startWithoutProfile(['lunch/app', 'lunch/api']);
+  await batch.editor.value?.set(setting('repository.has_wiki'), false);
+  await batch.review();
+  const api = memberFile(batch, 'lunch/api');
+  await batch.backToEdits();
+  await writeFile(api, 'not: [a staged apply');
+  await batch.editor.value?.set(setting('repository.has_issues'), false);
+
+  await batch.review();
+
+  const state = batch.state.value;
+  expect(state.kind === 'reviewed' ? state.refused.map((item) => item.split(':')[0]) : []).toEqual(['lunch/api']);
+  expect(statuses(batch)).toEqual(['lunch/app changes 1', 'lunch/api left-out 0']);
+  await batch.apply();
+  expect(writes(of('lunch/api'))).toEqual([]);
+});
+
+test('removing the last repository ends the batch and its edits', async () => {
+  const { github } = fleet('lunch/app');
+  const batch = new BatchApply(github, () => undefined);
+  await batch.startWithoutProfile(['lunch/app']);
+  await batch.review();
+  await batch.leaveOutRepository('lunch/app', true);
+
+  await batch.remove('lunch/app');
+
+  expect(batch.state.value).toEqual({ kind: 'idle' });
+  expect(batch.editor.value).toBeUndefined();
+  expect(await pending()).toEqual([]);
+});
+
+test('leaving while a batch that changes settings once starts leaves no editor or files behind', async () => {
+  const { github } = fleet('lunch/app', 'lunch/api');
+  const batch = new BatchApply(github, () => undefined);
+  const starting = batch.startWithoutProfile(['lunch/app', 'lunch/api']);
+  await batch.close();
+  await starting;
+
+  expect(batch.state.value).toEqual({ kind: 'idle' });
+  expect(batch.editor.value).toBeUndefined();
+  expect(await pending()).toEqual([]);
 });

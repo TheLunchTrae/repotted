@@ -353,7 +353,11 @@ export function BatchPage({ batch, router }: BatchProps): JSX.Element {
           <>
             {refused.length > 0 && (
               <div class="notice notice-drift" role="status">
-                <p>Some repositories kept the change:</p>
+                <p>
+                  {editor === undefined
+                    ? 'Some repositories kept the change:'
+                    : "Some repositories couldn't take the edits, so they are left out:"}
+                </p>
                 <ul>
                   {refused.map((item) => (
                     <li key={item}>{item}</li>

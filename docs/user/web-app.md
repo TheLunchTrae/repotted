@@ -422,7 +422,8 @@ turned off here, since the repositories can differ; the review marks them
 instead.
 
 The second step is the batch review described above, with each change
-marked **One-off edit**. Click **Back to edits** to change the edits for
+marked **One-off edit**. A repository whose apply can't take the edits is
+named and left out of the batch. Click **Back to edits** to change the edits for
 every repository, then **Review changes** again. Apply works as for any
 batch, and the repositories keep no record of the change.
 

@@ -360,6 +360,14 @@ export class BatchApply {
     }
     await this.#work(state.profileName, [], async (folder) => {
       const { refused } = await copyEditsEverywhere(folder, edits);
+      // One that kept other edits would be applied with them, so it waits, left out, until it is put back.
+      if (refused.length > 0) {
+        await leaveOut(
+          folder,
+          refused.map((item) => item.repository),
+          true,
+        );
+      }
       return this.#review(
         folder,
         refused.map((item) => `${item.repository}: ${cleaned(item.message)}`),
@@ -473,12 +481,14 @@ export class BatchApply {
   async remove(repository: string): Promise<void> {
     const state = this.state.value;
     if (state.kind === 'reviewed') {
-      await this.#work(state.profileName, state.members, async (folder) => {
+      await this.#work(state.profileName, state.members, async (folder, current) => {
         const { batch } = await discardBatchMember(folder, repository);
         if (batch === null) {
           await rm(dirname(folder), { recursive: true, force: true });
-          this.#edits = undefined;
-          this.editor.value = undefined;
+          if (current()) {
+            this.#edits = undefined;
+            this.editor.value = undefined;
+          }
           return { kind: 'idle' };
         }
         return this.#review(folder, []);
@@ -611,6 +621,10 @@ export class BatchApply {
       const left = (await this.#held(folder)) ? (await readBatch(folder)).members.length : 0;
       if (left === 0) {
         await rm(dirname(folder), { recursive: true, force: true });
+        if (turn === this.#turn) {
+          this.#edits = undefined;
+          this.editor.value = undefined;
+        }
       }
       // Those that didn't finish come first, since they are what is left to do.
       const ordered = [...results.filter((result) => !result.finished), ...results.filter((result) => result.finished)];
