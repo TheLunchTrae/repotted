@@ -1,10 +1,10 @@
 import type { JSX } from 'preact';
-import { useEffect, useId, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useId, useRef, useState } from 'preact/hooks';
 
 import type { BatchDone, BatchScope, ProfileEditor } from '../../app/profile-editor/profile-editor.js';
 import { run } from '../layout/run.js';
 
-interface BatchAction {
+export interface BatchAction {
   readonly label: string;
   readonly count: number;
   /** What the count counts, for a screen reader: "settings", or "rulesets". */
@@ -34,36 +34,101 @@ export function describeSettingsDone(done: BatchDone): string {
 }
 
 export function describeEntriesDone(one: string, many: string): (done: BatchDone) => string {
-  return (done) =>
-    done.action === 'reset'
-      ? `${plural(done.count, `${one} is`, `${many} are`)} back to what is saved.`
-      : `${plural(done.count, `${one} is`, `${many} are`)} out of the profile.`;
+  return (done) => {
+    const counted = plural(done.count, `${one} is`, `${many} are`);
+    if (done.action === 'reset') {
+      return `${counted} back to what is saved.`;
+    }
+    return done.action === 'put-back' ? `${counted} back in the profile.` : `${counted} out of the profile.`;
+  };
+}
+
+export function describePatternsDone(done: BatchDone): string {
+  return `${plural(done.count, 'pattern is', 'patterns are')} off the list.`;
+}
+
+export function describeProfileResetDone(done: BatchDone): string {
+  return `${plural(done.count, 'unsaved change was', 'unsaved changes were')} discarded.`;
+}
+
+interface BatchUndoNoticeProps {
+  readonly editor: ProfileEditor;
+  readonly scope: BatchScope;
+  readonly describeDone: (done: BatchDone) => string;
+  /** False where the action left nothing to save, as the save bar's Reset does. */
+  readonly changesWaitForSave?: boolean;
+  /** Set once the action was pressed here, so the keyboard moves to Undo, which reads out what was done. */
+  readonly focusUndo: boolean;
+  readonly onUndoFocused: () => void;
+  readonly onUndo: () => void;
+}
+
+/** What the last batch action pressed in this place did, with Undo, while nothing else has changed since. */
+export function BatchUndoNotice({
+  editor,
+  scope,
+  describeDone,
+  changesWaitForSave = true,
+  focusUndo,
+  onUndoFocused,
+  onUndo,
+}: BatchUndoNoticeProps): JSX.Element | null {
+  const done = editor.batchDone.value;
+  const doneHere = done?.scope === scope ? done : undefined;
+  const undo = useRef<HTMLButtonElement>(null);
+  const doneId = useId();
+  useEffect(() => {
+    if (focusUndo && doneHere !== undefined) {
+      undo.current?.focus();
+      onUndoFocused();
+    }
+  }, [focusUndo, doneHere, onUndoFocused]);
+  if (doneHere === undefined) {
+    return null;
+  }
+  return (
+    <div class="notice batch-done">
+      <p class="small" id={doneId}>
+        {describeDone(doneHere)}
+        {changesWaitForSave && ' Nothing changes until you save.'}
+      </p>
+      <button
+        class="button button-small"
+        type="button"
+        ref={undo}
+        aria-describedby={doneId}
+        disabled={editor.saving.value}
+        onClick={() => {
+          onUndo();
+          run(editor.undoBatch());
+        }}
+      >
+        Undo
+      </button>
+    </div>
+  );
 }
 
 /**
- * Sits in a heading row that wraps: the actions, which show only when they
- * would change something, and once one is pressed, what it did with Undo
- * on a line of its own.
+ * Sits in a row that wraps: the actions, which show only when they would
+ * change something, and once one is pressed, what it did with Undo on a
+ * line of its own.
  */
 export function BatchActions({ editor, scope, name, actions, describeDone }: BatchActionsProps): JSX.Element {
-  const done = editor.batchDone.value;
-  const doneHere = done?.scope === scope ? done : undefined;
+  const doneHere = editor.batchDone.value?.scope === scope;
   const shown = actions.filter((action) => action.count > 0);
-  const undo = useRef<HTMLButtonElement>(null);
-  const doneId = useId();
   const actionsHolder = useRef<HTMLDivElement>(null);
   const [focusUndoOnceDone, setFocusUndoOnceDone] = useState(false);
   const [focusActionsAfterUndo, setFocusActionsAfterUndo] = useState(false);
-  // The pressed action goes once it has nothing left to change, so the keyboard moves to Undo, which reads out what
-  // was done, and back to the actions after it.
+  const undoFocused = useCallback(() => {
+    setFocusUndoOnceDone(false);
+  }, []);
+  const undone = useCallback(() => {
+    setFocusActionsAfterUndo(true);
+  }, []);
+  // The pressed action goes once it has nothing left to change, so the keyboard comes back to the actions after Undo.
   useEffect(() => {
-    if (focusUndoOnceDone && doneHere !== undefined) {
-      undo.current?.focus();
-      setFocusUndoOnceDone(false);
-    }
-  }, [focusUndoOnceDone, doneHere]);
-  useEffect(() => {
-    if (focusActionsAfterUndo && doneHere === undefined) {
+    if (focusActionsAfterUndo && !doneHere) {
       actionsHolder.current?.querySelector<HTMLButtonElement>('button')?.focus();
       setFocusActionsAfterUndo(false);
     }
@@ -89,26 +154,14 @@ export function BatchActions({ editor, scope, name, actions, describeDone }: Bat
           ))}
         </div>
       )}
-      {doneHere !== undefined && (
-        <div class="notice batch-done">
-          <p class="small" id={doneId}>
-            {describeDone(doneHere)} Nothing changes until you save.
-          </p>
-          <button
-            class="button button-small"
-            type="button"
-            ref={undo}
-            aria-describedby={doneId}
-            disabled={editor.saving.value}
-            onClick={() => {
-              setFocusActionsAfterUndo(true);
-              run(editor.undoBatch());
-            }}
-          >
-            Undo
-          </button>
-        </div>
-      )}
+      <BatchUndoNotice
+        editor={editor}
+        scope={scope}
+        describeDone={describeDone}
+        focusUndo={focusUndoOnceDone}
+        onUndoFocused={undoFocused}
+        onUndo={undone}
+      />
     </>
   );
 }

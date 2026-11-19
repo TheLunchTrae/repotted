@@ -317,3 +317,49 @@ test("an editor's list is followed as it is typed, and only while GitHub shows i
 
   await rm('/', { recursive: true });
 });
+
+test('the patterns that match nothing come off the list together, and Undo puts them back', async () => {
+  const { ProfileEditor } = await import('../../src/app/profile-editor/profile-editor.js');
+  const { mkdir, readFile, rm, writeFile } = await import('../../src/engine/files.js');
+  await mkdir('/profiles', { recursive: true });
+  const saved =
+    'actions:\n  allowed_actions: selected\n  selected_actions:\n    patterns_allowed:\n      - actions/*\n      - gone/away@v1\n      - octo-org/deploy@v1\n      - "bad pattern"\n';
+  await writeFile('/profiles/web.yaml', saved);
+  const github = held();
+  const editor = new ProfileEditor('/profiles/web.yaml', {
+    patterns: new ActionPatternChecks(github.check),
+    search: new ActionSearch(() => Promise.resolve([])),
+    appLookup: new GitHubAppLookup(() => Promise.resolve(undefined)),
+  });
+  await editor.load();
+  expect(editor.patternsMatchingNothing.value).toBe(0);
+
+  await github.land((pattern): ActionPatternCheck => {
+    if (pattern === 'gone/away@v1') {
+      return { pattern, status: 'not_found', missing: 'owner', name: 'gone', blocks: false };
+    }
+    if (pattern === 'bad pattern') {
+      return { pattern, status: 'invalid', reason: 'space', message: 'has a space' };
+    }
+    return match(pattern);
+  });
+  expect(editor.patternsMatchingNothing.value).toBe(2);
+
+  await editor.removePatternsMatchingNothing();
+
+  expect(editor.patterns?.lines.value.map((line) => line.text)).toEqual(['actions/*', 'octo-org/deploy@v1']);
+  expect(editor.batchDone.value).toMatchObject({ scope: 'patterns', action: 'removed', count: 2 });
+  expect(editor.patternsMatchingNothing.value).toBe(0);
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toBe(saved);
+
+  await editor.undoBatch();
+  expect(editor.patterns?.lines.value.map((line) => line.text)).toEqual([
+    'actions/*',
+    'gone/away@v1',
+    'octo-org/deploy@v1',
+    'bad pattern',
+  ]);
+  expect(editor.dirty.value).toBe(false);
+
+  await rm('/', { recursive: true });
+});

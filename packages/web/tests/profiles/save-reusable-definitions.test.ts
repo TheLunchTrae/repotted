@@ -192,3 +192,17 @@ test('changes made while a reusable save waits remain unsaved over the linked de
     [{ name: 'staging', wait_timer: 5 }],
   );
 });
+
+test("Undo after the save bar's Reset brings back a new entry's reusable name", async () => {
+  const profiles = await setup();
+  const editor = profiles.editor.value!;
+  const key = await editor.addEntry('environments', { name: 'production', wait_timer: 15 });
+  editor.setReusable('environments', key, 'Production');
+
+  await editor.resetAll({ offerUndo: true });
+  expect(editor.reusableName(key)).toBeUndefined();
+  expect(editor.batchDone.value).toMatchObject({ scope: 'profile', count: 2 });
+
+  await editor.undoBatch();
+  expect(editor.reusableName(key)).toBe('Production');
+});

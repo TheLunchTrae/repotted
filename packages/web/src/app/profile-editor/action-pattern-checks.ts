@@ -111,6 +111,18 @@ export class ActionPatternChecks {
     }),
   );
 
+  /** Patterns, trimmed, that GitHub says match nothing, as the summary counts them: those not found and those it refuses. */
+  readonly patternsMatchingNothing = computed(
+    () =>
+      new Set(
+        [...this.#known.value].flatMap(([pattern, state]) =>
+          state.kind === 'checked' && (state.check.status === 'not_found' || state.check.status === 'invalid')
+            ? [pattern]
+            : [],
+        ),
+      ),
+  );
+
   readonly canCheckAgain = computed(
     () =>
       this.#checkablePatterns().length > 0 &&

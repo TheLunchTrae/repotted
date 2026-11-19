@@ -255,6 +255,28 @@ const screens: Readonly<Record<string, Screen>> = {
     },
     visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Undo' }),
   },
+  'profile editor list with an entry selected': {
+    path: '/profiles',
+    reachFromPath: async (page) => {
+      await page.getByText('unfinished', { exact: true }).click();
+      await page.getByRole('tab', { name: /^Labels/u }).click();
+      await page.getByRole('checkbox', { name: 'Select unfinished', exact: true }).check();
+    },
+    visibleOnceDrawn: (page) => page.getByText('1 selected', { exact: true }),
+  },
+  'profile editor after Reset': {
+    path: '/profiles',
+    reachFromPath: async (page) => {
+      await page.getByText('website', { exact: true }).click();
+      await page.getByRole('button', { name: 'Remove all: 1 setting in Features' }).click();
+      const more = page.locator('.save-bar summary', { hasText: 'More' });
+      if (await more.isVisible()) {
+        await more.click();
+      }
+      await page.locator('.save-bar').getByRole('button', { name: 'Reset', exact: true }).click();
+    },
+    visibleOnceDrawn: (page) => page.getByText('1 unsaved change was discarded.', { exact: true }),
+  },
   'settings a capture could not read': {
     path: '/profiles/new',
     reachFromPath: async (page) => {
@@ -770,6 +792,32 @@ test('group actions sit beside the heading and above the description on phones',
     expect(description.x, `${name}: description aligned with heading`).toBe(heading.x);
     expect(action.height, `${name}: touch target`).toBeGreaterThanOrEqual(44);
   }
+});
+
+test("a list entry's checkbox takes taps across a 44px target", async ({ page }) => {
+  await page.goto('/profiles');
+  await page.getByText('unfinished', { exact: true }).click();
+  await page.getByRole('tab', { name: /^Labels/u }).click();
+  const checkbox = page.getByRole('checkbox', { name: 'Select unfinished', exact: true });
+  await expect(checkbox).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const offsetsThatMiss = await checkbox.evaluate((element) => {
+    element.scrollIntoView({ block: 'center' });
+    const box = element.getBoundingClientRect();
+    const centerX = box.left + box.width / 2;
+    const centerY = box.top + box.height / 2;
+    return [
+      [-20, 0],
+      [20, 0],
+      [0, -20],
+      [0, 20],
+    ]
+      .filter(
+        ([offsetX = 0, offsetY = 0]) => document.elementFromPoint(centerX + offsetX, centerY + offsetY) !== element,
+      )
+      .map(([offsetX, offsetY]) => `${offsetX},${offsetY}`);
+  });
+  expect(offsetsThatMiss, "taps 20px from the box's center that miss it").toEqual([]);
 });
 
 test('folder settings offer Save, Apply without edits, and Save and apply for all members', async ({ page }) => {

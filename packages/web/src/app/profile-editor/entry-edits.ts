@@ -95,6 +95,11 @@ export function canBeTakenOut(row: EntryRow): boolean {
   return row.entry !== undefined && (row.source === 'here' || row.source === undefined);
 }
 
+/** What Put it back can bring back: one taken out by an unsaved change, or by the draft while it still applies. */
+export function canBePutBack(row: EntryRow): boolean {
+  return row.entry === undefined && (row.unsaved || row.applied !== undefined);
+}
+
 export type EntryChanges = ReadonlyMap<string, EntryChange>;
 
 export interface EntryWrite {
@@ -413,11 +418,6 @@ export class EntryEdits {
 
   resetAll(): void {
     this.#changes.value = new Map();
-  }
-
-  /** Every change to the list's entries goes, as Reset does on each; not while a save is writing, which the editor waits for. */
-  resetAllIn(list: EntryList): void {
-    this.#changes.value = new Map([...this.#changes.value].filter(([, change]) => change.list !== list));
   }
 
   /** Each entry the list can take out of the profile, as Take out of profile does: one this profile names, or one that is new. */

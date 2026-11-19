@@ -1,6 +1,6 @@
 import { permissionsInProse } from '@repotted/core';
 import type { ComponentChildren, JSX } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import type { Router } from '../../app/navigation/router.js';
@@ -13,7 +13,13 @@ import { BarActions } from '../layout/action-bar.js';
 import { run } from '../layout/run.js';
 import { SharedDefinition } from '../profiles/shared-definitions.js';
 import { ActionSearchBox } from './action-search.js';
-import { BatchActions, describeSettingsDone } from './batch-actions.js';
+import {
+  BatchActions,
+  BatchUndoNotice,
+  describePatternsDone,
+  describeProfileResetDone,
+  describeSettingsDone,
+} from './batch-actions.js';
 import { describeValue } from './describe-value.js';
 import { Entries, type EntryGoTo } from './entries.js';
 import { MissingPermissionsNote } from './missing-permissions-note.js';
@@ -187,6 +193,25 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
       {field.kind === 'list' && field.key === 'selected_actions.patterns_allowed' && editor.patterns !== undefined && (
         <PatternChecks checks={editor.patterns} />
       )}
+      {field.key === 'selected_actions.patterns_allowed' &&
+        row.missingPermissions.length === 0 &&
+        (editor.patternsMatchingNothing.value > 0 || editor.batchDone.value?.scope === 'patterns') && (
+          <div class="batch-row">
+            <BatchActions
+              editor={editor}
+              scope="patterns"
+              describeDone={describePatternsDone}
+              actions={[
+                {
+                  label: 'Remove those matching nothing',
+                  count: editor.patternsMatchingNothing.value,
+                  counted: editor.patternsMatchingNothing.value === 1 ? 'pattern' : 'patterns',
+                  act: () => editor.removePatternsMatchingNothing(),
+                },
+              ]}
+            />
+          </div>
+        )}
       {field.key === 'selected_actions.patterns_allowed' &&
         editor.actionSearch !== undefined &&
         row.missingPermissions.length === 0 && <ActionSearchBox editor={editor} search={editor.actionSearch} />}
@@ -397,6 +422,25 @@ export function ProfileSettings({
   const filtering = editor.definitionSection.value === undefined && editor.filtering.value;
   const preview = editor.preview.value;
   const search = useRef<HTMLInputElement>(null);
+  const saveBar = useRef<HTMLDivElement>(null);
+  const [focusUndoAfterReset, setFocusUndoAfterReset] = useState(false);
+  const [focusResetAfterUndo, setFocusResetAfterUndo] = useState(false);
+  const resetUndoShown = editor.batchDone.value?.scope === 'profile';
+  const undoAfterResetFocused = useCallback(() => {
+    setFocusUndoAfterReset(false);
+  }, []);
+  const resetUndone = useCallback(() => {
+    setFocusResetAfterUndo(true);
+  }, []);
+  // On a phone Reset is in the closed More menu, so the keyboard goes back to More.
+  useEffect(() => {
+    if (focusResetAfterUndo && !resetUndoShown) {
+      const reset = saveBar.current?.querySelector<HTMLElement>('[data-reset-all]');
+      const closedMenu = reset?.closest('details:not([open])');
+      (closedMenu?.querySelector<HTMLElement>('summary') ?? reset)?.focus();
+      setFocusResetAfterUndo(false);
+    }
+  }, [focusResetAfterUndo, resetUndoShown]);
   const saveError = editor.saveError.value;
   const blocking = editor.problemsBlockingSave.value.length > 0;
   const tabs = useRef<HTMLDivElement>(null);
@@ -518,6 +562,32 @@ export function ProfileSettings({
             : `${editor.settingsHiddenForOwnerTypeCount.value} settings that only organizations have are hidden.`}
         </p>
       )}
+      {filtering &&
+        (editor.foundBatch.value.namedHere > 0 ||
+          editor.foundBatch.value.unsaved > 0 ||
+          editor.batchDone.value?.scope === 'found') && (
+          <div class="batch-row found-batch">
+            <BatchActions
+              editor={editor}
+              scope="found"
+              describeDone={describeSettingsDone}
+              actions={[
+                {
+                  label: 'Reset all',
+                  count: editor.foundBatch.value.unsaved,
+                  counted: editor.foundBatch.value.unsaved === 1 ? 'setting' : 'settings',
+                  act: () => editor.resetAllFound(),
+                },
+                {
+                  label: 'Remove all',
+                  count: editor.foundBatch.value.namedHere,
+                  counted: editor.foundBatch.value.namedHere === 1 ? 'setting' : 'settings',
+                  act: () => editor.removeAllFound(),
+                },
+              ]}
+            />
+          </div>
+        )}
       {filtering && (
         <div class="groups">
           {editor.found.value.map(({ tab: name, group, rows, missingPermissions }) => (
@@ -660,7 +730,16 @@ export function ProfileSettings({
           preview={preview}
         />
       )}
-      <div class="save-bar">
+      <div class="save-bar" ref={saveBar}>
+        <BatchUndoNotice
+          editor={editor}
+          scope="profile"
+          describeDone={describeProfileResetDone}
+          changesWaitForSave={false}
+          focusUndo={focusUndoAfterReset}
+          onUndoFocused={undoAfterResetFocused}
+          onUndo={resetUndone}
+        />
         {saveError !== undefined && (
           <p class="problem" role="alert">
             {saveError}
@@ -687,9 +766,11 @@ export function ProfileSettings({
               <button
                 class="button button-quiet"
                 type="button"
+                data-reset-all
                 disabled={!editor.dirty.value || editor.saving.value}
                 onClick={() => {
-                  run(editor.resetAll());
+                  setFocusUndoAfterReset(true);
+                  run(editor.resetAll({ offerUndo: true }));
                 }}
               >
                 Reset
