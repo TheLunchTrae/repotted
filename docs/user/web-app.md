@@ -719,8 +719,8 @@ marked **Not saved** in the list. Moving your profiles to another place waits
 until you save or reset them, and the browser asks before a reload or a
 closed tab discards them. Deleting a profile discards its unsaved changes,
 and so does a sync that finds the profile deleted or renamed on GitHub.
-The browser also asks in the moment after a save, while it is still
-storing the change.
+The browser also asks in the moment after any change to your profiles,
+while it is still storing that change.
 
 **Rulesets**, **Environments**, and **Labels** each list what the profile
 names, with **New ruleset**, **New environment**, or **New label**. Click
