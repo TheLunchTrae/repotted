@@ -1,8 +1,6 @@
 import { computed, signal } from '@preact/signals';
 import {
   createPlan,
-  describeSkipped,
-  describeWarning,
   type GitHub,
   lockChanges,
   OwnerMismatchError,
@@ -19,6 +17,8 @@ import { settingSections } from '../profile-editor/setting-fields.js';
 import { searchWords } from '../profile-editor/setting-search.js';
 
 type Change = Plan['changes'][number];
+type Warning = Plan['warnings'][number];
+type Skipped = Plan['skipped'][number];
 
 export interface CompareRow {
   readonly kind: 'changes' | 'adds' | 'removes';
@@ -214,6 +214,60 @@ export function exclusionLabel(key: string): string {
   }
   const label = settingNames(key).label.replaceAll('_', ' ');
   return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+}
+
+/** The labels of the setting at `path` in `section`, or of the settings under it when it is a group of them. */
+function quotedSettingLabels(section: string, path: string): string {
+  const full = `${section}.${path}`;
+  const exact = fields.find((field) => field.path.join('.') === full);
+  const labels =
+    exact === undefined
+      ? fields.filter((field) => field.path.join('.').startsWith(`${full}.`)).map((field) => field.label)
+      : [exact.label];
+  if (labels.length === 0) {
+    const words = path.slice(path.lastIndexOf('.') + 1).replaceAll('_', ' ');
+    return `“${words.charAt(0).toUpperCase()}${words.slice(1)}”`;
+  }
+  const quoted = labels.map((label) => `“${label}”`);
+  return quoted.length === 1 ? (quoted[0] ?? '') : `${quoted.slice(0, -1).join(', ')} and ${quoted.at(-1) ?? ''}`;
+}
+
+function settingValueName(section: string, path: string, value: unknown): string {
+  const named = settingNames(`${section}.${path}`).named(value);
+  return named === 'On' || named === 'Off' ? named.toLowerCase() : `“${named}”`;
+}
+
+/** A plan warning as the review shows it, naming each setting by its label rather than its profile key. */
+export function reviewNote({ section, key, field, cause, inactive_while: inactiveWhile, message }: Warning): string {
+  if (cause === undefined || section === undefined) {
+    return message;
+  }
+  const noun = entryNounByList[section];
+  const where =
+    noun !== undefined && key !== undefined
+      ? `${noun} "${key}"`
+      : key === undefined
+        ? sectionTitles[section]
+        : `${quotedSettingLabels(section, field === undefined ? key : `${key}.${field}`)} in ${sectionTitles[section]}`;
+  const reason =
+    inactiveWhile === undefined
+      ? message
+      : `it does not apply while ${quotedSettingLabels(section, inactiveWhile.key)} is ${inactiveWhile.values
+          .map((value) => settingValueName(section, inactiveWhile.key, value))
+          .join(' or ')}`;
+  return `Skipped ${where}: ${reason}`;
+}
+
+/** A draft the plan leaves out, as the review lists it. */
+export function draftNote({ section, target, unset }: Skipped): string {
+  const noun = entryNounByList[section];
+  const named =
+    noun !== undefined
+      ? `${noun} "${target}"`
+      : section === 'pages' && target === 'absent'
+        ? 'GitHub Pages site (turns the site off)'
+        : `${quotedSettingLabels(section, target)} in ${sectionTitles[section]}`;
+  return unset === true ? `${named} (stops managing it)` : named;
 }
 
 function settingRow(path: string, from: unknown, to: unknown, lock: string | undefined): CompareRow {
@@ -525,8 +579,8 @@ export class Comparison {
             : access.app.status === 'installed' && access.app.settings_url !== null
               ? { settings: access.app.settings_url }
               : undefined,
-        skippedDrafts: plan.skipped.map(describeSkipped),
-        warnings: plan.warnings.map(describeWarning),
+        skippedDrafts: plan.skipped.map(draftNote),
+        warnings: plan.warnings.map(reviewNote),
       };
     } catch (error) {
       if (isSignedOut(error)) {

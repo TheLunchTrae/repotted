@@ -60,7 +60,7 @@ test('a comparison says what the profile would change, by section, and leaves ou
     'Labels | old | label removed | On GitHub -> Removed',
     'Labels | bug | new label | Not on GitHub -> Created',
   ]);
-  expect(comparison.state.value).toMatchObject({ skippedDrafts: ['repository.has_projects'] });
+  expect(comparison.state.value).toMatchObject({ skippedDrafts: ['“Projects” in Repository'] });
   expect(comparison.counts.value).toEqual({ differences: 5, locked: 0, matches: 1 });
   // GitHub didn't say which installations the account has, so nothing is locked and there is nowhere to send them.
   expect(comparison.state.value).toMatchObject({ appAccess: undefined });
@@ -378,4 +378,37 @@ test("the choice to show what needs no change stays for the next comparison, and
 
   comparison.showOnlyLockedDifferences.value = true;
   expect(matches(comparison)).toEqual([]);
+});
+
+test('review notes and drafts name each setting by its label, not its profile key', async () => {
+  await saved(`merge:
+  allow_merge_commit: false
+  merge_commit_message: PR_TITLE
+actions:
+  enabled: false
+  allowed_actions: selected
+drafts:
+  repository:
+    has_projects: false
+  actions:
+    selected_actions:
+      github_owned_allowed: true
+  unset:
+    - repository.has_wiki
+`);
+  const comparison = new Comparison(new FakeGitHub(), () => undefined);
+
+  await comparison.compare('lunch/app', profile);
+
+  expect(comparison.state.value).toMatchObject({
+    warnings: [
+      'Skipped “Merge commit message” in Merge: it does not apply while “Allow merge commits” is off',
+      'Skipped “Allowed actions” in Actions: it only applies while Actions is enabled',
+    ],
+    skippedDrafts: [
+      '“Projects” in Repository',
+      '“Wiki” in Repository (stops managing it)',
+      '“Actions by GitHub”, “Actions by verified creators” and “Allowed action patterns” in Actions',
+    ],
+  });
 });

@@ -256,3 +256,14 @@ test.each([
     }
   },
 );
+
+test('owning rulesets notes inherited organization rulesets only for an organization repository', async () => {
+  const inherited = (github: FakeGitHub, ownerType?: 'user' | 'organization') =>
+    createPlan(github, repo, ownerType === undefined ? {} : { owner_type: ownerType }, [], {
+      authoritative: ['rulesets'],
+    }).then((plan) => plan.warnings.filter((warning) => warning.message.includes('organization rulesets')));
+  expect(await inherited(new FakeGitHub({ ownerType: 'Organization' }))).toHaveLength(1);
+  expect(await inherited(new FakeGitHub({ ownerType: 'Organization' }), 'organization')).toHaveLength(1);
+  expect(await inherited(new FakeGitHub({ ownerType: 'User' }))).toEqual([]);
+  expect(await inherited(new FakeGitHub({ ownerType: 'User' }), 'user')).toEqual([]);
+});

@@ -68,7 +68,10 @@ export const actionsEndpoints: readonly Endpoint[] = [
         const { include_claim_keys: _keys, ...rest } = desired;
         return {
           desired: rest,
-          dropped: { fields: ['include_claim_keys'], reason: 'GitHub ignores claim keys while use_default is true' },
+          dropped: {
+            fields: ['include_claim_keys'],
+            reason: 'GitHub ignores the claim keys while the subject claim uses its default',
+          },
         };
       }
       return { desired: { ...desired, use_default: false } };
@@ -176,7 +179,7 @@ export function planActions(input: ActionsSettings, live: ActionsSettings, repo:
         section: 'actions',
         key: 'selected_actions',
         cause: 'not_applicable',
-        message: 'it only applies while Actions is enabled with allowed_actions: selected',
+        message: 'it only applies while Actions is enabled and allows only selected actions',
       });
     } else {
       const fields = fieldChanges(desired.selected_actions, live.selected_actions);

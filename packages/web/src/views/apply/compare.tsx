@@ -131,9 +131,7 @@ export function ComparePage({ comparison, router }: CompareProps): JSX.Element {
                 <p>The profile's draft is left out. It holds:</p>
                 <ul>
                   {state.skippedDrafts.map((skipped) => (
-                    <li key={skipped} class="mono small">
-                      {skipped}
-                    </li>
+                    <li key={skipped}>{skipped}</li>
                   ))}
                 </ul>
               </div>

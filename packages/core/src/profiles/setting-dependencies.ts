@@ -10,7 +10,8 @@ export interface SettingCondition {
 interface Dependency extends SettingCondition {
   readonly section: string;
   readonly keys: readonly string[];
-  readonly reason: string;
+  /** Set when the reason says more than that the other setting has one of its values. */
+  readonly reason?: string | undefined;
 }
 
 function dependency(
@@ -19,7 +20,7 @@ function dependency(
   other: string,
   values: readonly unknown[],
   hidden = true,
-  reason = `it does not apply while ${other} is ${values.map((value) => JSON.stringify(value)).join(' or ')}`,
+  reason?: string,
 ): Dependency {
   return { section, keys, otherSettingKeyInSameSection: other, values, hiddenRatherThanGreyedOut: hidden, reason };
 }
@@ -48,7 +49,7 @@ const dependencies: readonly Dependency[] = [
     'allowed_actions',
     ['all', 'local_only'],
     true,
-    'it only applies while Actions is enabled with allowed_actions: selected',
+    'it only applies while Actions is enabled and allows only selected actions',
   ),
   dependency(
     'actions',
@@ -67,7 +68,7 @@ const dependencies: readonly Dependency[] = [
     'oidc_customization_sub.use_default',
     [true],
     true,
-    'GitHub ignores claim keys while use_default is true',
+    'GitHub ignores the claim keys while the subject claim uses its default',
   ),
   dependency(
     'security',
@@ -151,6 +152,8 @@ function get(settings: object, key: string): unknown {
 export interface InactiveSetting {
   readonly key: string;
   readonly reason: string;
+  /** The setting in the same section whose value turns this one off, when the reason names nothing else. */
+  readonly inactive_while?: { readonly key: string; readonly values: readonly unknown[] };
 }
 
 /** Dependencies use the desired value first, then live state for settings the profile leaves unmanaged. */
@@ -180,7 +183,15 @@ export function activeSettings<T extends object>(
       const path = prefix === '' ? key : `${prefix}.${key}`;
       const rule = blockedBy(path);
       if (rule !== undefined) {
-        inactive.push({ key: path, reason: rule.reason });
+        inactive.push(
+          rule.reason === undefined
+            ? {
+                key: path,
+                reason: `it does not apply while ${rule.otherSettingKeyInSameSection} is ${rule.values.map((blocked) => JSON.stringify(blocked)).join(' or ')}`,
+                inactive_while: { key: rule.otherSettingKeyInSameSection, values: rule.values },
+              }
+            : { key: path, reason: rule.reason },
+        );
         Reflect.deleteProperty(kept, key);
       } else if (isRecord(value)) {
         const child = keep(value, path);

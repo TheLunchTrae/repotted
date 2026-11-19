@@ -5,8 +5,6 @@ import {
   ApplyError,
   createStagedApply,
   describeFailure,
-  describeSkipped,
-  describeWarning,
   editStagedApply,
   type GitHub,
   lockChanges,
@@ -37,7 +35,7 @@ import {
 import { profileName, profileVersion } from '../repositories/repository-profiles.js';
 import type { AppliedVersion } from '../repositories/saved-assignments.js';
 import { type ApplyQueue, type AssignmentRecord, pageQueue } from './apply-queue.js';
-import { type ComparedProfile, type CompareSection, compareSections } from './comparison.js';
+import { type ComparedProfile, type CompareSection, compareSections, draftNote, reviewNote } from './comparison.js';
 
 export interface Reviewed {
   /** Travels with the review, so no other plan can be applied in its place. */
@@ -619,8 +617,8 @@ export class Apply {
       sections: compareSections(staged.plan, locks, staged.exclusions),
       fromProfile: staged.staged.profiles.length > 0,
       leftOut: staged.staged.exclude,
-      skippedDrafts: staged.plan.skipped.map(describeSkipped),
-      warnings: staged.plan.warnings.map(describeWarning),
+      skippedDrafts: staged.plan.skipped.map(draftNote),
+      warnings: staged.plan.warnings.map(reviewNote),
       appAccess:
         access.app.status === 'not_installed'
           ? 'install'

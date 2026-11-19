@@ -243,7 +243,9 @@ field of that setting, and `cause`, which says why:
 - `unavailable`: the repository doesn't offer it, as on a GitHub plan
   without the feature. `capture` leaves these out without a warning.
 - `not_applicable`: it doesn't apply with the other settings, such as
-  selected actions while Actions is off.
+  selected actions while Actions is off. When the reason is only that another
+  setting in the same section has a value that turns it off, the warning also
+  has `inactive_while: { key, values }`, that setting's key and those values.
 - `unloadable`: in `capture` only, a profile can't hold the value GitHub
   reports, such as an option newer than Repotted.
 

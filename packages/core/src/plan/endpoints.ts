@@ -187,7 +187,7 @@ export function activeSettingsForPlan<T extends object>(
   warnings: Warning[],
 ): T {
   const { settings, inactive } = activeSettings(section, desired, live);
-  for (const { key: path, reason } of inactive) {
+  for (const { key: path, reason, inactive_while } of inactive) {
     const [key, ...field] = path.split('.');
     warnings.push({
       section,
@@ -195,6 +195,7 @@ export function activeSettingsForPlan<T extends object>(
       ...(field.length === 0 ? {} : { field: field.join('.') }),
       cause: 'not_applicable',
       message: reason,
+      ...(inactive_while === undefined ? {} : { inactive_while }),
     });
   }
   return settings;

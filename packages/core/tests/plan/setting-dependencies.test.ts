@@ -69,8 +69,7 @@ describe.each([
         section: 'security',
         key,
         cause: 'not_applicable',
-        message:
-          'it needs Actions to be enabled; set actions.enabled: true in the profile or enable Actions on the repository',
+        message: 'it needs Actions to be enabled; turn Actions on in the profile or on the repository',
       },
     ]);
     await applyPlan(github, plan);
