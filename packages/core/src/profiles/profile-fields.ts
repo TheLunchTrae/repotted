@@ -173,7 +173,6 @@ export function removeUnknownProfileFields(document: Document): void {
   retain(document.contents, known);
 }
 
-/** What every save does to a profile file: removes unknown fields and sets bypass actor IDs GitHub ignores to the ones it keeps. */
 export function tidyProfileDocument(document: Document): void {
   removeUnknownProfileFields(document);
   settleIgnoredBypassActorIds(document);

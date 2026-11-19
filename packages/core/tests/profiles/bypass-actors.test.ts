@@ -27,6 +27,8 @@ describe('rulesetsWithBypassActorIdsSettledBySave', () => {
             { name: 'Main', bypass_actors: [{ ...owner, actor_id: 7 }] },
             { name: 'Kept', bypass_actors: [{ ...owner, actor_id: 1 }] },
             { name: 'From a base', bypass_actors: [{ ...owner, actor_id: 3 }] },
+            { name: 'Removed', bypass_actors: [{ ...owner, actor_id: 7 }] },
+            { name: 'Owner dropped', bypass_actors: [{ ...owner, actor_id: 7 }] },
           ],
         },
         {
@@ -34,6 +36,7 @@ describe('rulesetsWithBypassActorIdsSettledBySave', () => {
             { name: 'Main', bypass_actors: [{ ...owner, actor_id: 1 }] },
             { name: 'Kept', bypass_actors: [{ ...owner, actor_id: 1 }] },
             { name: 'From a base', bypass_actors: [{ ...owner, actor_id: 3 }] },
+            { name: 'Owner dropped', bypass_actors: [] },
           ],
         },
       ),

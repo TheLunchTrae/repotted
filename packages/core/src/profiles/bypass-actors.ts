@@ -1,5 +1,6 @@
 import { type Document, isMap, isScalar, isSeq } from 'yaml';
 
+import { isDeepEqual } from '../shared/equal.js';
 import type { Profile } from './schema.js';
 
 const actorTypesGitHubReadsBackAsOne: ReadonlySet<string> = new Set(['OrganizationAdmin', 'EnterpriseOwner']);
@@ -16,7 +17,6 @@ export function bypassActorIdGitHubKeeps(actorType: string, actorId: number | nu
   return actorTypesGitHubReadsBackAsOne.has(actorType) ? 1 : actorId;
 }
 
-/** Returns whether it changed any ID. */
 export function settleIgnoredBypassActorIds(document: Document): boolean {
   const rulesets = document.get('rulesets', true);
   if (!isSeq(rulesets)) {
@@ -53,19 +53,29 @@ export function settleIgnoredBypassActorIds(document: Document): boolean {
   return settledAny;
 }
 
-function hasIgnoredBypassActorId(ruleset: NonNullable<Profile['rulesets']>[number]): boolean {
-  return (
-    'bypass_actors' in ruleset &&
-    (ruleset.bypass_actors ?? []).some(
-      (actor) => bypassActorIdGitHubKeeps(actor.actor_type, actor.actor_id) !== actor.actor_id,
-    )
-  );
+type ProfileRuleset = NonNullable<Profile['rulesets']>[number];
+type BypassActor = NonNullable<Extract<ProfileRuleset, { bypass_actors?: unknown }>['bypass_actors']>[number];
+
+function bypassActorsOf(ruleset: ProfileRuleset | undefined): readonly BypassActor[] | undefined {
+  return ruleset !== undefined && 'bypass_actors' in ruleset ? ruleset.bypass_actors : undefined;
+}
+
+function withIdsGitHubKeeps(actors: readonly BypassActor[]): BypassActor[] {
+  return actors.map((actor) => ({ ...actor, actor_id: bypassActorIdGitHubKeeps(actor.actor_type, actor.actor_id) }));
 }
 
 /** The rulesets whose ignored bypass actor IDs a save sets to the ones GitHub keeps, for a preview to explain the change. */
 export function rulesetsWithBypassActorIdsSettledBySave(before: Profile, after: Profile): string[] {
-  const settledAfter = new Set((after.rulesets ?? []).filter(hasIgnoredBypassActorId).map((ruleset) => ruleset.name));
-  return (before.rulesets ?? [])
-    .filter((ruleset) => hasIgnoredBypassActorId(ruleset) && !settledAfter.has(ruleset.name))
+  const beforeByName = new Map((before.rulesets ?? []).map((ruleset) => [ruleset.name, ruleset]));
+  return (after.rulesets ?? [])
+    .filter((ruleset) => {
+      const actorsBefore = bypassActorsOf(beforeByName.get(ruleset.name));
+      const actorsAfter = bypassActorsOf(ruleset);
+      if (actorsBefore === undefined || actorsAfter === undefined) {
+        return false;
+      }
+      const settledBefore = withIdsGitHubKeeps(actorsBefore);
+      return !isDeepEqual(settledBefore, actorsBefore) && isDeepEqual(settledBefore, actorsAfter);
+    })
     .map((ruleset) => ruleset.name);
 }

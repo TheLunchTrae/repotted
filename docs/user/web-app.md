@@ -530,19 +530,17 @@ A profile with valid YAML syntax opens in the settings, even if its
 configuration is invalid. Errors appear on the affected fields or areas and
 in the save problems list. Correct the values in the forms, or use **Remove
 invalid configuration** for a malformed area. Errors in a base profile name
-the file to open. Unknown keys are ignored on load and removed from this
-file when saving. Saving also sets a ruleset bypass actor ID that GitHub
-ignores, such as an organization owner's, to the one GitHub keeps, and the
-preview names each ruleset this changes. **Save** is available for removing
-unknown keys alone; loading
-changes no files. **Save** checks the corrected
-profile and its bases before writing.
+the file to open. Unknown keys are ignored on load and removed from this file
+when saving. Saving also sets a ruleset bypass actor ID that GitHub ignores,
+such as an organization owner's, to the one GitHub keeps, and the preview
+names each ruleset this changes. **Save** is available for removing unknown
+keys alone; loading changes no files. **Save** checks the corrected profile
+and its bases before writing.
 
 If the YAML syntax is invalid, the page offers **Profile YAML** under **Fix
 the profile**. Correct the syntax there; **Save** stays off until the YAML
-can be read. Saving removes unknown keys, sets bypass actor IDs GitHub
-ignores to the ones it keeps, keeps known invalid values for
-correction, and opens its
+can be read. Saving removes unknown keys, sets bypass actor IDs GitHub ignores
+to the ones it keeps, keeps known invalid values for correction, and opens its
 settings, where configuration errors can be corrected. If the saved file changes before your
 save, Repotted refuses to replace it and keeps your corrections. Copy them
 before using **Reload**, which discards unsaved changes and reads the saved
