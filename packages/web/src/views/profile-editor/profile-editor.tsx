@@ -131,7 +131,7 @@ function ChoiceConfirmation({
   const { field, value, turnsOff } = choice;
   const removes = editor.canHoldDrafts;
   return (
-    <div class="notice notice-drift choice-confirmation" role="alertdialog" aria-labelledby={headingId}>
+    <div class="notice notice-drift choice-confirmation" role="alert" aria-labelledby={headingId}>
       <strong id={headingId}>
         {removes ? 'Remove' : 'Skip'} {settingsCounted(turnsOff.length)}?
       </strong>

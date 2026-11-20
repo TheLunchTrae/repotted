@@ -278,6 +278,33 @@ test('a value picked that turns off nothing the profile names is set at once', a
   expect(row(editor, 'actions.enabled')).toMatchObject({ value: false, unsaved: true, choiceToConfirm: undefined });
 });
 
+test('a value picked asks only about settings it turns off that nothing else already does', async () => {
+  const editor = await opened({
+    'web.yaml':
+      'actions:\n  enabled: true\n  allowed_actions: all\n  selected_actions:\n    github_owned_allowed: true\n  sha_pinning_required: true\n',
+  });
+
+  await editor.choose(field('actions.enabled'), false);
+
+  expect(labels(row(editor, 'actions.enabled')?.choiceToConfirm?.turnsOff)).toEqual([
+    'Allowed actions',
+    'Require pinning to a full commit SHA',
+  ]);
+});
+
+test('a value picked that greys out a setting the profile names waits for a yes too', async () => {
+  const editor = await opened({
+    'web.yaml': 'security:\n  vulnerability_alerts: true\n  automated_security_fixes: true\n',
+  });
+
+  await editor.choose(field('security.vulnerability_alerts'), false);
+
+  expect(labels(row(editor, 'security.vulnerability_alerts')?.choiceToConfirm?.turnsOff)).toEqual([
+    'Dependabot security updates',
+  ]);
+  expect(row(editor, 'security.automated_security_fixes')?.turnedOffByChoiceToConfirm).toBe(true);
+});
+
 test('a change while a value waits for a yes withdraws it', async () => {
   const editor = await opened({ 'web.yaml': 'actions:\n  enabled: true\n  allowed_actions: selected\n' });
 

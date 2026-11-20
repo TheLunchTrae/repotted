@@ -616,14 +616,21 @@ export function reviewSections(
   sections: readonly CompareSection[],
   skipped: readonly SkippedSettingRow[],
 ): ReviewSection[] {
+  // The plan can split a section, as to turn Actions on before a code scanning setup, so a row goes in one part only.
+  const lastPartOf = (name: string): CompareSection | undefined =>
+    sections.findLast((section) => section.section === name);
   const withChanges = sections.map((section): ReviewSection => {
     const here = skipped.filter((row) => row.section === section.section);
+    const placedElsewhere = (item: SkippedSettingRow): boolean =>
+      sections.some((other) => other !== section && other.rows.some((row) => row.key === item.after));
     return {
       section: section.section,
       title: section.title,
       rows: [
         ...section.rows.flatMap((row) => [row, ...here.filter((item) => item.after === row.key)]),
-        ...here.filter((item) => item.after === undefined || !section.rows.some((row) => row.key === item.after)),
+        ...(lastPartOf(section.section) === section
+          ? here.filter((item) => !section.rows.some((row) => row.key === item.after) && !placedElsewhere(item))
+          : []),
       ],
     };
   });

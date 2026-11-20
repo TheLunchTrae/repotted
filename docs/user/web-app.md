@@ -305,14 +305,14 @@ what it will have after the apply. From there you can:
   back to the edits at it, as **Go to it** does. A setting that another
   setting hides goes to the one that hides it.
 
+- Click **Review again** to read the profile and GitHub again.
+
 A setting the profile sets that the apply skips, because another setting
 turns it off on GitHub, shows greyed out in its section with the value it
 would have had and why it isn't applied. It sits under the setting that turns
 it off when the apply changes that one, and last in its section otherwise,
 as when the repository's own value turns it off. Click its **Edit** to go
 back to the edits at it.
-
-- Click **Review again** to read the profile and GitHub again.
 
 A change GitHub would refuse says what it needs, as on a comparison.
 **Apply** waits until no such change is left: leave it out, or click

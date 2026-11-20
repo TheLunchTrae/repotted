@@ -2049,14 +2049,14 @@ export class ProfileEditor {
     value: unknown,
     edits: ReadonlyMap<string, SettingEdit>,
   ): readonly SettingField[] {
-    const before = this.#settingsTurnedOffBy(field, edits);
     const after = new Map(edits);
     this.#changeIn(after, field, value);
     const owner = this.ownerType.value;
     // What has a value is judged before the change, which may itself stop naming a setting it turns off.
+    // One that another setting already turns off goes at a save whatever this one's value.
     return this.#withValueAmong(fieldsOf(field.section), edits).filter(
       (other) =>
-        !before.includes(other) &&
+        this.#turnedOffOnGitHub(other, edits) === undefined &&
         fits(owner, needOf(other.path)) &&
         this.#turnedOffOnGitHub(other, after)?.field === field,
     );

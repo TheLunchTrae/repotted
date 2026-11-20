@@ -547,3 +547,31 @@ test('a skip that names no setting the profile sets stays a note', () => {
     'Skipped Pages: a new site built from a branch needs a source branch, or a workflow to build it',
   ]);
 });
+
+test('a skipped setting shows once where the plan splits its section', async () => {
+  const github = new FakeGitHub({
+    actions: { enabled: false },
+    settings: { '/code-scanning/default-setup': { state: 'not-configured', runner_type: null, runner_label: null } },
+  });
+  // Turning Actions on goes ahead of the code scanning setup, so Actions comes in two parts.
+  const plan = await createPlan(github, parseRepo('lunch/app'), {
+    actions: {
+      enabled: true,
+      allowed_actions: 'all',
+      selected_actions: { github_owned_allowed: true },
+      default_workflow_permissions: 'read',
+    },
+    security: { code_scanning_default_setup: { state: 'configured' } },
+  });
+  const sections = compareSections(plan, new Map());
+  expect(sections.filter((section) => section.section === 'actions')).toHaveLength(2);
+
+  const { skipped } = reviewOfWarnings(plan, sections);
+
+  expect(
+    reviewSections(sections, skipped)
+      .flatMap((section) => section.rows)
+      .filter((row) => row.kind === 'skipped')
+      .map((row) => row.key),
+  ).toEqual(['actions.selected_actions.github_owned_allowed']);
+});
