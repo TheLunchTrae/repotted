@@ -346,6 +346,8 @@ interface ProfileSettingsProps {
   readonly sharedDefinitions?: { readonly profiles: Profiles; readonly router: Router } | undefined;
   /** A place to go to, as when a link outside the editor names one; each new object is gone to. */
   readonly landOn?: EditorPlace | undefined;
+  /** Once the editor has gone to `landOn`, so the owner lets go of it and a later editor doesn't go there again. */
+  readonly onLanded?: (() => void) | undefined;
 }
 
 export function ProfileSettings({
@@ -355,6 +357,7 @@ export function ProfileSettings({
   ownerTypeHasPushRulesets,
   sharedDefinitions,
   landOn,
+  onLanded,
 }: ProfileSettingsProps): JSX.Element {
   const [savingChanges, saveChanges] = usePendingAction();
   const [savingDraft, saveDraft] = usePendingAction();
@@ -403,15 +406,18 @@ export function ProfileSettings({
       />
     );
   const [entryGoTo, setEntryGoTo] = useState<EntryGoTo | undefined>(undefined);
-  const [placeToLand, setPlaceToLand] = useState<{ readonly id: string; readonly marks: string } | undefined>(
-    undefined,
-  );
+  const [placeToLand, setPlaceToLand] = useState<
+    { readonly id: string; readonly marks: string; readonly orElseTab?: string } | undefined
+  >(undefined);
   // The place shows once its tab does, so it takes the keyboard after that render.
   useEffect(() => {
     if (placeToLand === undefined) {
       return;
     }
-    const element = document.getElementById(placeToLand.id);
+    // A place the editor doesn't draw, as a setting the profile's owner type lacks, falls back to its tab.
+    const element =
+      document.getElementById(placeToLand.id) ??
+      (placeToLand.orElseTab === undefined ? null : document.getElementById(`tab-${placeToLand.orElseTab}`));
     const marked = element?.closest<HTMLElement>(placeToLand.marks) ?? element;
     if (element !== null && marked !== null) {
       // A choice's radio group has no id of its own, so its chosen option, or else its first, takes the keyboard.
@@ -440,7 +446,11 @@ export function ProfileSettings({
     }
     setTab(place.tab);
     if (place.kind === 'setting') {
-      setPlaceToLand({ id: `setting-${place.field.path.join('-')}-label`, marks: '.setting' });
+      setPlaceToLand({
+        id: `setting-${place.field.path.join('-')}-label`,
+        marks: '.setting, .tab',
+        orElseTab: place.tab,
+      });
     } else if (place.kind === 'entry') {
       setEntryGoTo({ list: place.tab, rowKey: place.row.key, field: place.field });
     } else {
@@ -451,6 +461,7 @@ export function ProfileSettings({
   useEffect(() => {
     if (landOn !== undefined) {
       goTo(landOn);
+      onLanded?.();
     }
   }, [landOn]);
   const settingsUrl = editor.installationSettingsUrl.value;

@@ -763,6 +763,9 @@ export function Profile({ listing, profiles, router, standalone, onSaved }: Prof
           sharedDefinitions={listing.kind === undefined ? { profiles, router } : undefined}
           ownerTypeHasPushRulesets={listing.owner_type !== 'user'}
           landOn={landOn}
+          onLanded={() => {
+            setLandOn(undefined);
+          }}
         />
       )}
       {showYaml && opened?.file === listing.file && (

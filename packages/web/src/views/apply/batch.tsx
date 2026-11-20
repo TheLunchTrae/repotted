@@ -355,6 +355,9 @@ export function BatchPage({ batch, router, earlierApplies }: BatchProps): JSX.El
             name=""
             editor={editor}
             landOn={landOn}
+            onLanded={() => {
+              setEditing(undefined);
+            }}
             ownerTypeHasPushRulesets={editor.ownerType.value !== 'user'}
             saving={{
               save: () => editor.save((work) => work()),

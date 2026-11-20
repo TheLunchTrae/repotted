@@ -659,8 +659,13 @@ and "what the file has" for a setting is its draft's value when it has one.
 | Saving             | The write ends                                                                 | Saved, then a sync when profiles are kept on GitHub. A change made while it ran stays unsaved.                                                                                                                           |
 | Saving             | The write fails                                                                | Unsaved, with why, and **Save** on to try again. A setting changed back meanwhile to what the save was writing keeps its change.                                                                                         |
 
-The save problems list takes the keyboard to a setting or an entry's own
-field. Ordinary tab navigation clears that destination. **Reset** clears
+The save problems list, the invalid profile notice, and a review note's
+**Edit** take the keyboard to a setting, an entry's own field, or a
+configuration notice, and mark it until its animation ends: two pulses, or a
+still outline with reduced motion. A setting the editor doesn't draw falls
+back to its tab. The page that asked lets go of the place once the editor has
+gone there, so an editor made again later, as after a change of ownership,
+opens as usual. Ordinary tab navigation clears that destination. **Reset** clears
 unsaved edits; a saved draft's problem instead offers **Go to it** and says
 to edit or discard the draft. Resetting save problems also clears batch
 Undo. Every typed change closes any pending or open save preview, including

@@ -1,7 +1,14 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
-import { type CompareRow, compareSections, Comparison, draftNote, reviewNote } from '../../src/app/apply/comparison.js';
+import {
+  type CompareRow,
+  compareSections,
+  Comparison,
+  draftNote,
+  linkedReviewNote,
+  reviewNote,
+} from '../../src/app/apply/comparison.js';
 import { mkdir, rm, writeFile } from '../../src/engine/files.js';
 
 afterEach(async () => {
@@ -434,4 +441,30 @@ test('an exclusion that leaves nothing out, and a drafted entry, read in words',
     'Excluding ruleset "Main" leaves nothing out, since the profile sets nothing it names',
   );
   expect(draftNote({ section: 'labels', target: 'bug', unset: true })).toBe('Label "bug" (stops managing it)');
+});
+
+test('a note that skips a setting or an entry says which, and no other note does', () => {
+  const about = (warning: Parameters<typeof linkedReviewNote>[0]) => linkedReviewNote(warning).about;
+  expect(
+    about({
+      section: 'actions',
+      key: 'selected_actions',
+      field: 'patterns_allowed',
+      cause: 'not_applicable',
+      message: 'it only applies while Actions allows only selected actions',
+    }),
+  ).toEqual({
+    section: 'actions',
+    key: 'selected_actions.patterns_allowed',
+  });
+  expect(about({ section: 'labels', key: 'bug', cause: 'refused', message: 'GitHub refused it' })).toEqual({
+    section: 'labels',
+    key: 'bug',
+  });
+  expect(
+    about({ section: 'rulesets', message: 'Rulesets from above the repository are not reconciled' }),
+  ).toBeUndefined();
+  expect(
+    about({ exclusion: 'rulesets/Main', section: 'rulesets', key: 'Main', cause: 'refused', message: 'x' }),
+  ).toBeUndefined();
 });

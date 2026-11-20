@@ -1276,8 +1276,9 @@ export class ProfileEditor {
     }
     const [section, at] = problem.path;
     const list = entryLists.find((known) => known === section);
+    // Only this file's entries have positions, so a base profile's problem stays on its own notice.
     const row =
-      list === undefined || typeof at !== 'number'
+      list === undefined || typeof at !== 'number' || problem.file !== this.file
         ? undefined
         : this.entries.value[list].find((item) => item.index === at);
     return list === undefined || row === undefined

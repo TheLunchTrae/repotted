@@ -529,7 +529,17 @@ test("a review note's Edit goes back to the edits at the setting it names", asyn
   await expect(page.getByRole('tab', { name: /^Actions/u }).first()).toHaveAttribute('aria-selected', 'true');
   const github = page.getByRole('radiogroup', { name: 'Actions by GitHub', exact: true });
   await expect(github.getByRole('radio', { name: 'On', exact: true })).toBeFocused();
-  await expect(page.locator('.setting').filter({ has: github })).toHaveClass(/\blanded\b/u);
+  const githubSetting = page.locator('.setting').filter({ has: github });
+  await expect(githubSetting).toHaveClass(/\blanded\b/u);
+  await expect(githubSetting).not.toHaveClass(/\blanded\b/u, { timeout: 5000 });
+
+  // Another change that reads the edits again opens them as usual, not at the note's setting.
+  const labels = page.getByRole('checkbox', { name: /^Labels/u });
+  await labels.check();
+  await expect(labels).toBeChecked();
+  await expect(page.getByRole('tab', { name: /^Repository/u })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.landed')).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: /^Repository/u })).toHaveAttribute('aria-selected', 'true');
 });
 
 test('two saves of the same profile replace the live announcement', async ({ page }) => {

@@ -1237,4 +1237,13 @@ test('a problem in the profile file leads to its setting, its entry, or its own 
   ]);
   const unreadable = await opened({ 'other.yaml': 'labels: [42]\n' }, 'other.yaml');
   expect(names(unreadable)).toEqual([['configuration', 'labels.0']]);
+  // A base profile's entry is not the entry at the same position here.
+  const extending = await opened(
+    {
+      'base.yaml': 'labels: [{ name: x, color: nope }]\n',
+      'web.yaml': 'extends: base.yaml\nlabels: [{ name: bug, color: d73a4a }]\n',
+    },
+    'web.yaml',
+  );
+  expect(names(extending)[0]).toEqual(['configuration', 'labels.0.color']);
 });

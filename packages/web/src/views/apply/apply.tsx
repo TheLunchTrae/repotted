@@ -122,6 +122,15 @@ export function ApplyPage({ apply, router, earlierApplies }: ApplyProps): JSX.El
       savable: current.kind === 'editing' && current.fromProfile && !current.builtIn,
     };
   });
+  const editor = apply.editor.value;
+  // A review note's Edit goes back to the edits at what it names, as a new object each time, so the same note goes again.
+  const [editing, setEditing] = useState<{ readonly about: NonNullable<LinkedReviewNote['about']> } | undefined>(
+    undefined,
+  );
+  const landOn = useMemo(
+    () => (editing === undefined ? undefined : editor?.placeOf(editing.about.section, editing.about.key)),
+    [editing, editor],
+  );
   const back = (
     <Link router={router} to={state.kind === 'idle' ? '/' : repositoryAddress(state.repository)}>
       Back to repositories
@@ -140,15 +149,6 @@ export function ApplyPage({ apply, router, earlierApplies }: ApplyProps): JSX.El
   }
   const counts = apply.counts.value;
   const working = state.kind === 'reviewing' || state.kind === 'applying';
-  const editor = apply.editor.value;
-  // A review note's Edit goes back to the edits at what it names, as a new object each time, so the same note goes again.
-  const [editing, setEditing] = useState<{ readonly about: NonNullable<LinkedReviewNote['about']> } | undefined>(
-    undefined,
-  );
-  const landOn = useMemo(
-    () => (editing === undefined ? undefined : editor?.placeOf(editing.about.section, editing.about.key)),
-    [editing, editor],
-  );
   const discard = (
     <button
       class="button button-quiet"
@@ -246,6 +246,9 @@ export function ApplyPage({ apply, router, earlierApplies }: ApplyProps): JSX.El
               name={state.profileName}
               editor={editor}
               landOn={landOn}
+              onLanded={() => {
+                setEditing(undefined);
+              }}
               ownerTypeHasPushRulesets={editor.ownerType.value !== 'user'}
               saving={{
                 save: () => editor.save((work) => work()),
