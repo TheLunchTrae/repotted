@@ -1,3 +1,4 @@
+import { createPlan, parseRepo } from '@repotted/core';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
@@ -8,6 +9,8 @@ import {
   draftNote,
   linkedReviewNote,
   reviewNote,
+  reviewOfWarnings,
+  reviewSections,
 } from '../../src/app/apply/comparison.js';
 import { mkdir, rm, writeFile } from '../../src/engine/files.js';
 
@@ -467,4 +470,108 @@ test('a note that skips a setting or an entry says which, and no other note does
   expect(
     about({ exclusion: 'rulesets/Main', section: 'rulesets', key: 'Main', cause: 'refused', message: 'x' }),
   ).toBeUndefined();
+});
+
+test('a setting the plan skips while another turns it off is a row under that one, not a note', async () => {
+  const plan = await createPlan(new FakeGitHub(), parseRepo('lunch/app'), {
+    actions: {
+      enabled: false,
+      allowed_actions: 'selected',
+      sha_pinning_required: true,
+      selected_actions: { github_owned_allowed: true },
+      can_approve_pull_request_reviews: true,
+    },
+  });
+  const sections = compareSections(plan, new Map());
+
+  const { skipped, notes } = reviewOfWarnings(plan, sections);
+
+  expect(notes).toEqual([]);
+  expect(
+    reviewSections(sections, skipped).flatMap((section) =>
+      section.rows.map((row) => (row.kind === 'skipped' ? `skipped ${row.key} ${row.value}` : row.key)),
+    ),
+  ).toEqual([
+    'actions.enabled',
+    'skipped actions.allowed_actions Selected',
+    'skipped actions.selected_actions.github_owned_allowed On',
+    'skipped actions.sha_pinning_required On',
+    'actions.can_approve_pull_request_reviews',
+  ]);
+  expect(skipped[0]).toMatchObject({
+    label: 'Allowed actions',
+    reason: 'Not applied: it only applies while Actions is enabled',
+    about: { section: 'actions', key: 'allowed_actions' },
+  });
+});
+
+test('a setting skipped while a setting the profile leaves alone turns it off comes last in its section', async () => {
+  const plan = await createPlan(new FakeGitHub({ actions: { enabled: false } }), parseRepo('lunch/app'), {
+    repository: { has_wiki: false },
+    actions: { allowed_actions: 'selected' },
+  });
+  const sections = compareSections(plan, new Map());
+
+  const { skipped } = reviewOfWarnings(plan, sections);
+
+  expect(
+    reviewSections(sections, skipped).map((section) => [
+      section.title,
+      section.rows.map((row) => `${row.kind} ${row.key}`),
+    ]),
+  ).toEqual([
+    ['Repository', ['changes repository.has_wiki']],
+    ['Actions', ['skipped actions.allowed_actions']],
+  ]);
+});
+
+test('a skip that names no setting the profile sets stays a note', () => {
+  const plan = {
+    repository: 'lunch/app',
+    desired: { pages: { build_type: 'legacy' as const } },
+    changes: [],
+    skipped: [],
+    warnings: [
+      {
+        section: 'pages' as const,
+        cause: 'not_applicable' as const,
+        message: 'a new site built from a branch needs a source branch, or a workflow to build it',
+      },
+    ],
+  };
+
+  const { skipped, notes } = reviewOfWarnings(plan, []);
+
+  expect(skipped).toEqual([]);
+  expect(notes.map((note) => note.text)).toEqual([
+    'Skipped Pages: a new site built from a branch needs a source branch, or a workflow to build it',
+  ]);
+});
+
+test('a skipped setting shows once where the plan splits its section', async () => {
+  const github = new FakeGitHub({
+    actions: { enabled: false },
+    settings: { '/code-scanning/default-setup': { state: 'not-configured', runner_type: null, runner_label: null } },
+  });
+  // Turning Actions on goes ahead of the code scanning setup, so Actions comes in two parts.
+  const plan = await createPlan(github, parseRepo('lunch/app'), {
+    actions: {
+      enabled: true,
+      allowed_actions: 'all',
+      selected_actions: { github_owned_allowed: true },
+      default_workflow_permissions: 'read',
+    },
+    security: { code_scanning_default_setup: { state: 'configured' } },
+  });
+  const sections = compareSections(plan, new Map());
+  expect(sections.filter((section) => section.section === 'actions')).toHaveLength(2);
+
+  const { skipped } = reviewOfWarnings(plan, sections);
+
+  expect(
+    reviewSections(sections, skipped)
+      .flatMap((section) => section.rows)
+      .filter((row) => row.kind === 'skipped')
+      .map((row) => row.key),
+  ).toEqual(['actions.selected_actions.github_owned_allowed']);
 });

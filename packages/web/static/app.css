@@ -2337,6 +2337,20 @@ select.field {
   padding: 10px 14px;
 }
 
+/* A setting the apply skips, greyed out under the setting that turns it off. */
+.compare-row-skipped {
+  padding-inline-start: 34px;
+  background: var(--sunken);
+}
+
+.compare-row-skipped .compare-what {
+  opacity: 0.62;
+}
+
+.compare-skip-reason {
+  flex: 1 1 14rem;
+}
+
 .compare-what {
   display: grid;
   flex: 1 1 14rem;
@@ -2667,6 +2681,23 @@ select.field {
 
 .setting-problem {
   border-inline-start-color: var(--remove);
+}
+
+/* A setting that a value waiting for a yes, above it, would turn off. */
+.setting-turning-off {
+  border-inline-start-color: var(--drift);
+  background: color-mix(in srgb, var(--drift-bg) 45%, transparent);
+}
+
+.choice-confirmation p,
+.turns-off p {
+  margin: 4px 0 0;
+}
+
+.choice-confirmation ul,
+.turns-off ul {
+  margin: 4px 0 0;
+  padding-inline-start: 20px;
 }
 
 .review-note {

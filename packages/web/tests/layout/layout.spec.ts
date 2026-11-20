@@ -507,7 +507,7 @@ test('without motion, a marked setting holds still and then lets go', async ({ p
   await expect(wikiSetting).not.toHaveClass(/\blanded\b/u, { timeout: 5000 });
 });
 
-test("a review note's Edit goes back to the edits at the setting it names", async ({ page }) => {
+test("a skipped setting's Edit goes back to the edits at that setting", async ({ page }) => {
   // The repository allows all actions, so a profile's choice of which are allowed is skipped.
   await page.goto('/profiles');
   await page.getByText('base', { exact: true }).click();
@@ -523,9 +523,7 @@ test("a review note's Edit goes back to the edits at the setting it names", asyn
   await expect(page.getByText('base saved.', { exact: true })).toBeVisible();
   await openPage(page, 'Repositories');
   await page.getByRole('button', { name: /^Review apply/u }).click();
-  const note = page.locator('.review-note').filter({ hasText: 'Actions' });
-
-  await note.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit Actions by GitHub', exact: true }).click();
   await expect(page.getByRole('tab', { name: /^Actions/u }).first()).toHaveAttribute('aria-selected', 'true');
   const github = page.getByRole('radiogroup', { name: 'Actions by GitHub', exact: true });
   await expect(github.getByRole('radio', { name: 'On', exact: true })).toBeFocused();

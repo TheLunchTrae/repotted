@@ -1,7 +1,7 @@
 import type { JSX } from 'preact';
 import { useId } from 'preact/hooks';
 
-import type { LinkedReviewNote } from '../../app/apply/comparison.js';
+import type { LinkedReviewNote, SkippedSettingRow } from '../../app/apply/comparison.js';
 
 interface ReviewNotesProps {
   readonly notes: readonly LinkedReviewNote[];
@@ -38,5 +38,43 @@ export function ReviewNotes({ notes, onEdit, editDisabled, class: className }: R
         </li>
       ))}
     </ul>
+  );
+}
+
+interface SkippedSettingProps {
+  readonly row: SkippedSettingRow;
+  readonly onEdit: ((about: SkippedSettingRow['about']) => void) | undefined;
+  readonly editDisabled: boolean;
+  /** Said after the setting in its **Edit** button's accessible name, as for a batch's repository. */
+  readonly forWhom?: string;
+}
+
+/** A setting the apply skips, greyed out in place, with **Edit**, which goes back to the edits at it. */
+export function SkippedSetting({ row, onEdit, editDisabled, forWhom }: SkippedSettingProps): JSX.Element {
+  return (
+    <li class="compare-row compare-row-skipped">
+      <span class="compare-what">
+        <strong>{row.label}</strong>
+        <span class="mono small muted">{row.key}</span>
+      </span>
+      <span class="compare-values">
+        <span class="visually-hidden">Skipped: the profile sets </span>
+        <span class="struck">{row.value}</span>
+      </span>
+      <span class="small muted compare-skip-reason">{row.reason}</span>
+      {onEdit !== undefined && (
+        <button
+          class="button button-quiet button-small"
+          type="button"
+          aria-label={`Edit ${row.label}${forWhom === undefined ? '' : `, for ${forWhom}`}`}
+          disabled={editDisabled}
+          onClick={() => {
+            onEdit(row.about);
+          }}
+        >
+          Edit
+        </button>
+      )}
+    </li>
   );
 }

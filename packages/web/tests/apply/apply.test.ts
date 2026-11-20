@@ -764,3 +764,28 @@ test('one-off edits are held, saved to the apply or not, until they are saved to
   await apply.close();
   expect(apply.holdsOneOffEdits.value).toBe(false);
 });
+
+test("an apply's edit that turns off what the profile sets waits for a yes, and the review shows them skipped", async () => {
+  await saved('actions:\n  enabled: true\n  allowed_actions: selected\n');
+  const apply = new Apply(new FakeGitHub(), () => undefined);
+  await apply.start('lunch/app', profile);
+  const editor = apply.editor.value;
+  const enabled = setting('actions.enabled');
+
+  await editor?.choose(enabled, false);
+  const enabledRow = () =>
+    editor?.sections.value
+      .flatMap((section) => section.groups.flatMap((group) => group.rows))
+      .find((row) => row.field === enabled);
+  expect(enabledRow()?.choiceToConfirm?.turnsOff.map((field) => field.label)).toEqual(['Allowed actions']);
+  await editor?.confirmChoice();
+  expect(enabledRow()?.turnsOff.map((field) => field.label)).toEqual(['Allowed actions']);
+
+  await apply.review();
+
+  const state = apply.state.value;
+  expect(state.kind === 'reviewed' ? state.skippedSettings.map((row) => row.key) : []).toEqual([
+    'actions.allowed_actions',
+  ]);
+  expect(state.kind === 'reviewed' ? state.warnings : undefined).toEqual([]);
+});
