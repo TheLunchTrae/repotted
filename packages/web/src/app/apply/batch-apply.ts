@@ -42,7 +42,8 @@ import {
   draftNote,
   exclusionLabel,
   type LinkedReviewNote,
-  linkedReviewNote,
+  type SkippedSettingRow,
+  reviewOfWarnings,
 } from './comparison.js';
 
 export interface BatchMemberView {
@@ -56,6 +57,8 @@ export interface BatchMemberView {
   readonly leftOut: readonly string[];
   readonly skippedDrafts: readonly string[];
   readonly warnings: readonly LinkedReviewNote[];
+  /** The settings the plan skips because another setting turns them off, which the review shows in their sections. */
+  readonly skippedSettings: readonly SkippedSettingRow[];
 }
 
 /** `key` leaves the change out everywhere; `repositories` names those whose plans include it. */
@@ -158,6 +161,8 @@ function failureOf(repository: string, error: unknown): BatchResult {
 function membersOf(plan: BatchPlan, assignments: ProfileAssignments | undefined): BatchMemberView[] {
   const planned = plan.plans.map((member): BatchMemberView => {
     const locks = new Map(member.locks.map((lock) => [lock.change, lock.reason]));
+    const sections = compareSections(member, locks, member.exclusions);
+    const { skipped, notes } = reviewOfWarnings(member, sections);
     return {
       repository: member.repository,
       profiles: member.staged.profiles.map((file) =>
@@ -167,10 +172,11 @@ function membersOf(plan: BatchPlan, assignments: ProfileAssignments | undefined)
       status: member.locks.length > 0 ? 'needs-access' : member.changes.length === 0 ? 'in-line' : 'changes',
       changes: member.changes.length,
       comparisonFailureMessage: undefined,
-      sections: compareSections(member, locks, member.exclusions),
+      sections,
       leftOut: member.staged.exclude,
       skippedDrafts: member.skipped.map(draftNote),
-      warnings: member.warnings.map(linkedReviewNote),
+      warnings: notes,
+      skippedSettings: skipped,
     };
   });
   const rest = (repository: string, status: 'failed' | 'left-out', message: string | undefined): BatchMemberView => ({
@@ -184,6 +190,7 @@ function membersOf(plan: BatchPlan, assignments: ProfileAssignments | undefined)
     leftOut: [],
     skippedDrafts: [],
     warnings: [],
+    skippedSettings: [],
   });
   return [
     ...planned,

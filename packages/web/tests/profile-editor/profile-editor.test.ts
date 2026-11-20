@@ -52,6 +52,8 @@ function group(editor: ProfileEditor, sectionName: string, title: string) {
   return section(editor, sectionName)?.groups.find((item) => item.group.title === title);
 }
 
+const labels = (fields: readonly SettingField[] | undefined) => fields?.map((item) => item.label);
+
 /** Runs a save straight away, as the profiles' queue does when nothing is ahead of it. */
 const write = (work: () => Promise<void>): Promise<void> => work();
 
@@ -168,7 +170,7 @@ test('typed text that cannot be a value stays as typed with why, until it can', 
   expect(row(editor, 'actions.selected_actions.patterns_allowed')?.value).toEqual(['octo-org/*', '!octo-org/bad@*']);
 });
 
-test('a setting GitHub hides goes with the one it follows, and that one counts what the profile still names', async () => {
+test('a setting GitHub hides goes with the one it follows, and that one lists what the profile still names', async () => {
   const editor = await opened({
     'web.yaml': 'actions:\n  enabled: true\n  allowed_actions: selected\n  sha_pinning_required: true\n',
   });
@@ -179,14 +181,17 @@ test('a setting GitHub hides goes with the one it follows, and that one counts w
 
   expect(row(editor, 'actions.allowed_actions')).toBeUndefined();
   expect(row(editor, 'actions.sha_pinning_required')).toBeUndefined();
-  expect(row(editor, 'actions.enabled')?.hiddenNamed).toBe(2);
+  expect(labels(row(editor, 'actions.enabled')?.turnsOff)).toEqual([
+    'Allowed actions',
+    'Require pinning to a full commit SHA',
+  ]);
 
   await editor.save(write);
   expect(await readFile('/profiles/web.yaml', 'utf8')).toBe('actions:\n  enabled: false\n');
-  expect(row(editor, 'actions.enabled')?.hiddenNamed).toBe(0);
+  expect(row(editor, 'actions.enabled')?.turnsOff).toEqual([]);
 });
 
-test('a setting under one GitHub hides is hidden too, and the highest one counts what the profile still names', async () => {
+test('a setting under one GitHub hides is hidden too, and the highest one lists what the profile still names', async () => {
   const editor = await opened({
     'web.yaml':
       'actions:\n  enabled: true\n  allowed_actions: selected\n  selected_actions:\n    github_owned_allowed: true\n',
@@ -199,7 +204,7 @@ test('a setting under one GitHub hides is hidden too, and the highest one counts
   expect(row(editor, 'actions.selected_actions.github_owned_allowed')).toBeUndefined();
   expect(row(editor, 'actions.selected_actions.verified_allowed')).toBeUndefined();
   expect(row(editor, 'actions.selected_actions.patterns_allowed')).toBeUndefined();
-  expect(row(editor, 'actions.enabled')?.hiddenNamed).toBe(2);
+  expect(labels(row(editor, 'actions.enabled')?.turnsOff)).toEqual(['Allowed actions', 'Actions by GitHub']);
 });
 
 test('a setting GitHub greys out stays in place, off, with the setting that turns it off', async () => {
@@ -221,7 +226,67 @@ test('a setting under one GitHub hides is hidden, though its own setting would o
 
   expect(row(editor, 'security.code_scanning_default_setup.runner_type')).toBeUndefined();
   expect(row(editor, 'security.code_scanning_default_setup.runner_label')).toBeUndefined();
-  expect(row(editor, 'security.code_scanning_default_setup.state')?.hiddenNamed).toBe(1);
+  expect(labels(row(editor, 'security.code_scanning_default_setup.state')?.turnsOff)).toEqual(['Runner type']);
+});
+
+test('a value picked that turns off settings the profile names waits for a yes, and Cancel keeps the value', async () => {
+  const editor = await opened({
+    'web.yaml': 'actions:\n  enabled: true\n  allowed_actions: selected\n  sha_pinning_required: true\n',
+  });
+
+  await editor.choose(field('actions.enabled'), false);
+
+  expect(row(editor, 'actions.enabled')).toMatchObject({ value: true, unsaved: false });
+  expect(labels(row(editor, 'actions.enabled')?.choiceToConfirm?.turnsOff)).toEqual([
+    'Allowed actions',
+    'Require pinning to a full commit SHA',
+  ]);
+  expect(row(editor, 'actions.allowed_actions')?.turnedOffByChoiceToConfirm).toBe(true);
+  expect(row(editor, 'actions.default_workflow_permissions')?.turnedOffByChoiceToConfirm).toBe(false);
+
+  editor.cancelChoice();
+  expect(row(editor, 'actions.enabled')).toMatchObject({ value: true, choiceToConfirm: undefined });
+  expect(row(editor, 'actions.allowed_actions')).toMatchObject({
+    value: 'selected',
+    turnedOffByChoiceToConfirm: false,
+  });
+});
+
+test('a yes to a value that turns off settings sets it, and a save removes them', async () => {
+  const editor = await opened({
+    'web.yaml': 'actions:\n  enabled: true\n  allowed_actions: selected\n  sha_pinning_required: true\n',
+  });
+
+  await editor.choose(field('actions.enabled'), false);
+  await editor.confirmChoice();
+
+  expect(row(editor, 'actions.enabled')).toMatchObject({ value: false, unsaved: true, choiceToConfirm: undefined });
+  expect(row(editor, 'actions.allowed_actions')).toBeUndefined();
+  await editor.save(write);
+  expect(await readFile('/profiles/web.yaml', 'utf8')).toBe('actions:\n  enabled: false\n');
+});
+
+test('a value picked that turns off nothing the profile names is set at once', async () => {
+  const editor = await opened({
+    'base.yaml': 'actions:\n  allowed_actions: selected\n',
+    'web.yaml': 'extends: base.yaml\nactions:\n  enabled: true\n',
+  });
+
+  // A base profile's setting stays in its own file, so a save here removes nothing.
+  await editor.choose(field('actions.enabled'), false);
+
+  expect(row(editor, 'actions.enabled')).toMatchObject({ value: false, unsaved: true, choiceToConfirm: undefined });
+});
+
+test('a change while a value waits for a yes withdraws it', async () => {
+  const editor = await opened({ 'web.yaml': 'actions:\n  enabled: true\n  allowed_actions: selected\n' });
+
+  await editor.choose(field('actions.enabled'), false);
+  await editor.set(field('actions.default_workflow_permissions'), 'read');
+
+  expect(row(editor, 'actions.enabled')?.choiceToConfirm).toBeUndefined();
+  await editor.confirmChoice();
+  expect(row(editor, 'actions.enabled')?.value).toBe(true);
 });
 
 test('taking the Pages site down and describing one take each other out', async () => {

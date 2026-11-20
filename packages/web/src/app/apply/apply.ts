@@ -41,7 +41,8 @@ import {
   compareSections,
   draftNote,
   type LinkedReviewNote,
-  linkedReviewNote,
+  type SkippedSettingRow,
+  reviewOfWarnings,
 } from './comparison.js';
 
 export interface Reviewed {
@@ -53,6 +54,8 @@ export interface Reviewed {
   readonly leftOut: readonly string[];
   readonly skippedDrafts: readonly string[];
   readonly warnings: readonly LinkedReviewNote[];
+  /** The settings the plan skips because another setting turns them off, which the review shows in their sections. */
+  readonly skippedSettings: readonly SkippedSettingRow[];
   readonly appAccess: { readonly settings: string } | 'install' | undefined;
   /** Why the last try to apply wrote nothing, or stopped partway, with what this review then shows. */
   readonly notice: string | undefined;
@@ -631,6 +634,8 @@ export class Apply {
         ? []
         : await reviewedProfileVersions(this.#assignments, staged.staged.profiles, sourceVersions);
     this.#checkAssignment(repository, reviewedAssignment);
+    const sections = compareSections(staged.plan, locks, staged.exclusions);
+    const { skipped, notes } = reviewOfWarnings(staged.plan, sections);
     return {
       assignment,
       appliedVersions,
@@ -640,11 +645,12 @@ export class Apply {
       profileName: profile,
       plan: staged.plan,
       lockedChangeCount: locks.size,
-      sections: compareSections(staged.plan, locks, staged.exclusions),
+      sections,
       fromProfile: staged.staged.profiles.length > 0,
       leftOut: staged.staged.exclude,
       skippedDrafts: staged.plan.skipped.map(draftNote),
-      warnings: staged.plan.warnings.map(linkedReviewNote),
+      warnings: notes,
+      skippedSettings: skipped,
       appAccess:
         access.app.status === 'not_installed'
           ? 'install'

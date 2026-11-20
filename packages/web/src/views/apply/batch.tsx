@@ -4,7 +4,13 @@ import { Spinner } from '../layout/loading.js';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import type { BatchApply, BatchMemberView } from '../../app/apply/batch-apply.js';
-import { type CompareRow, exclusionLabel, type LinkedReviewNote, sectionTitles } from '../../app/apply/comparison.js';
+import {
+  type CompareRow,
+  exclusionLabel,
+  type LinkedReviewNote,
+  reviewSections,
+  sectionTitles,
+} from '../../app/apply/comparison.js';
 import type { Router } from '../../app/navigation/router.js';
 import { BarActions } from '../layout/action-bar.js';
 import { useLeaveQuestion } from '../layout/leave-question.js';
@@ -12,7 +18,7 @@ import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
 import { waitingForEarlier } from './apply.js';
-import { ReviewNotes } from './review-notes.js';
+import { ReviewNotes, SkippedSetting } from './review-notes.js';
 
 const kinds: Readonly<Record<CompareRow['kind'], string>> = { changes: 'Changes', adds: 'Adds', removes: 'Removes' };
 
@@ -102,39 +108,49 @@ function Member({ member, batch, reviewingOrApplying: working, onEdit, editDisab
           ))}
         </ul>
       )}
-      {member.sections.length > 0 && (
+      {(member.sections.length > 0 || member.skippedSettings.length > 0) && (
         <ul class="rows" role="list">
-          {member.sections.flatMap((section) =>
-            section.rows.map((row) => (
-              <li key={`${section.section} ${row.label} ${row.key}`} class="compare-row">
-                <span class="compare-what">
-                  <strong>{row.label}</strong>
-                  <span class="mono small muted">{row.key}</span>
-                </span>
-                <span class="compare-values">
-                  <span class="visually-hidden">{kinds[row.kind]}: on GitHub now, </span>
-                  <span class={row.kind === 'adds' ? 'muted' : 'compare-now'}>{row.now}</span>
-                  <span aria-hidden="true">→</span>
-                  <span class="visually-hidden">; after the apply, </span>
-                  <span class={row.kind === 'removes' ? 'compare-removed' : 'compare-wanted'}>{row.wanted}</span>
-                </span>
-                {row.lockReason !== undefined && <span class="pill pill-remove">{row.lockReason}</span>}
-                {row.oneOff === true && <span class="pill pill-drift">One-off edit</span>}
-                {row.leaveOut !== undefined && (
-                  <button
-                    class="button button-quiet button-small"
-                    type="button"
-                    disabled={working}
-                    aria-label={`Leave out ${row.label}, ${row.key}, for ${member.repository}`}
-                    onClick={() => {
-                      run(batch.leaveOut(member.repository, row.leaveOut ?? '', true));
-                    }}
-                  >
-                    Leave out
-                  </button>
-                )}
-              </li>
-            )),
+          {reviewSections(member.sections, member.skippedSettings).flatMap((section) =>
+            section.rows.map((row) =>
+              row.kind === 'skipped' ? (
+                <SkippedSetting
+                  key={`${section.section} skipped ${row.key}`}
+                  row={row}
+                  onEdit={onEdit}
+                  editDisabled={editDisabled}
+                  forWhom={member.repository}
+                />
+              ) : (
+                <li key={`${section.section} ${row.label} ${row.key}`} class="compare-row">
+                  <span class="compare-what">
+                    <strong>{row.label}</strong>
+                    <span class="mono small muted">{row.key}</span>
+                  </span>
+                  <span class="compare-values">
+                    <span class="visually-hidden">{kinds[row.kind]}: on GitHub now, </span>
+                    <span class={row.kind === 'adds' ? 'muted' : 'compare-now'}>{row.now}</span>
+                    <span aria-hidden="true">→</span>
+                    <span class="visually-hidden">; after the apply, </span>
+                    <span class={row.kind === 'removes' ? 'compare-removed' : 'compare-wanted'}>{row.wanted}</span>
+                  </span>
+                  {row.lockReason !== undefined && <span class="pill pill-remove">{row.lockReason}</span>}
+                  {row.oneOff === true && <span class="pill pill-drift">One-off edit</span>}
+                  {row.leaveOut !== undefined && (
+                    <button
+                      class="button button-quiet button-small"
+                      type="button"
+                      disabled={working}
+                      aria-label={`Leave out ${row.label}, ${row.key}, for ${member.repository}`}
+                      onClick={() => {
+                        run(batch.leaveOut(member.repository, row.leaveOut ?? '', true));
+                      }}
+                    >
+                      Leave out
+                    </button>
+                  )}
+                </li>
+              ),
+            ),
           )}
         </ul>
       )}

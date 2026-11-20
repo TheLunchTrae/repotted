@@ -8,6 +8,7 @@ import {
   type Plan,
   readAccess,
   resolveProfile,
+  settingCondition,
   skippedDrafts,
 } from '@repotted/core';
 
@@ -268,6 +269,14 @@ function excludedName(key: string): string {
     : `${quotedSettingLabels(section, key.slice(dot + 1))} in ${sectionTitles[section]}`;
 }
 
+function skipReason(section: string, inactiveWhile: Warning['inactive_while'], message: string): string {
+  return inactiveWhile === undefined
+    ? message
+    : `it does not apply while ${quotedSettingLabels(section, inactiveWhile.key)} is ${inactiveWhile.values
+        .map((value) => settingValueName(section, inactiveWhile.key, value))
+        .join(' or ')}`;
+}
+
 /** A plan warning as the review shows it, naming each setting by its label rather than its profile key. */
 export function reviewNote({
   section,
@@ -291,13 +300,7 @@ export function reviewNote({
       : key === undefined
         ? sectionTitles[section]
         : `${quotedSettingLabels(section, field === undefined ? key : `${key}.${field}`)} in ${sectionTitles[section]}`;
-  const reason =
-    inactiveWhile === undefined
-      ? message
-      : `it does not apply while ${quotedSettingLabels(section, inactiveWhile.key)} is ${inactiveWhile.values
-          .map((value) => settingValueName(section, inactiveWhile.key, value))
-          .join(' or ')}`;
-  return `Skipped ${where}: ${reason}`;
+  return `Skipped ${where}: ${skipReason(section, inactiveWhile, message)}`;
 }
 
 /** A review note, with the setting or entry it names, by section and profile key, for one that names one. */
@@ -496,6 +499,141 @@ function settingValuesByPath(path: string, values: Readonly<Record<string, unkno
       fields.some((field) => field.path.join('.').startsWith(`${at}.`));
     return opens ? settingValuesByPath(at, value) : [[at, value]];
   });
+}
+
+/**
+ * A setting the profile sets that the plan skips because another setting
+ * turns it off on GitHub, which the review shows greyed out in its section
+ * rather than as a note.
+ */
+export interface SkippedSettingRow {
+  readonly kind: 'skipped';
+  readonly section: string;
+  readonly label: string;
+  /** Its place in the profile, such as `actions.allowed_actions`. */
+  readonly key: string;
+  /** The value the profile sets, which the apply doesn't write. */
+  readonly value: string;
+  readonly reason: string;
+  /** The key of the row it follows: the nearest setting above it that turns it off, where the plan changes that one. */
+  readonly after: string | undefined;
+  /** The setting it is, as a review note's **Edit** goes to it. */
+  readonly about: { readonly section: string; readonly key: string };
+}
+
+const settingSectionNames = new Set(settingSections.map((section) => section.section));
+
+/** The settings with a value at or under `at` in a section of the profile, by their place in the profile. */
+function settingValuesAt(desired: unknown, section: string, at: string): [string, unknown][] {
+  const sectionValues = isRecord(desired) ? desired[section] : undefined;
+  const value = at
+    .split('.')
+    .reduce<unknown>((inside, part) => (isRecord(inside) ? inside[part] : undefined), sectionValues);
+  const path = `${section}.${at}`;
+  if (value === undefined) {
+    return [];
+  }
+  return isRecord(value) && !fields.some((field) => field.path.join('.') === path)
+    ? settingValuesByPath(path, value)
+    : [[path, value]];
+}
+
+/** The nearest setting above `key` whose value turns it off, of those the review has a row for. */
+function rowTurningOff(section: string, key: string, rowKeys: ReadonlySet<string>): string | undefined {
+  const above = settingCondition(section, key)?.otherSettingKeyInSameSection;
+  if (above === undefined) {
+    return undefined;
+  }
+  return rowKeys.has(`${section}.${above}`) ? `${section}.${above}` : rowTurningOff(section, above, rowKeys);
+}
+
+/**
+ * Splits the plan's warnings into the settings it skips because another
+ * setting turns them off, as rows, and the rest, as review notes.
+ */
+export function reviewOfWarnings(
+  plan: Plan,
+  sections: readonly CompareSection[],
+): { readonly skipped: readonly SkippedSettingRow[]; readonly notes: readonly LinkedReviewNote[] } {
+  const rowKeys = new Set(sections.flatMap((section) => section.rows.map((row) => row.key)));
+  const skipped: SkippedSettingRow[] = [];
+  const notes: LinkedReviewNote[] = [];
+  for (const warning of plan.warnings) {
+    const { section, key, field, cause, exclusion, inactive_while: inactiveWhile, message } = warning;
+    const at = key === undefined ? undefined : field === undefined ? key : `${key}.${field}`;
+    const values =
+      cause === 'not_applicable' &&
+      exclusion === undefined &&
+      section !== undefined &&
+      at !== undefined &&
+      settingSectionNames.has(section)
+        ? settingValuesAt(plan.desired, section, at)
+        : [];
+    if (section === undefined || values.length === 0) {
+      notes.push(linkedReviewNote(warning));
+      continue;
+    }
+    const reason = `Not applied: ${skipReason(section, inactiveWhile, message)}`;
+    for (const [path, value] of values) {
+      if (skipped.some((row) => row.key === path)) {
+        continue;
+      }
+      const { label, named } = settingNames(path);
+      const own = path.slice(section.length + 1);
+      skipped.push({
+        kind: 'skipped',
+        section,
+        label,
+        key: path,
+        value: named(value),
+        reason,
+        after: rowTurningOff(section, own, rowKeys),
+        about: { section, key: own },
+      });
+    }
+  }
+  const shownAt = (row: SkippedSettingRow): number => {
+    const at = fields.findIndex((field) => field.path.join('.') === row.key);
+    return at === -1 ? fields.length : at;
+  };
+  // In the order the editor shows them, which the plan's warnings don't keep.
+  return { skipped: skipped.toSorted((one, other) => shownAt(one) - shownAt(other)), notes };
+}
+
+export interface ReviewSection {
+  readonly section: string;
+  readonly title: string;
+  readonly rows: readonly (CompareRow | SkippedSettingRow)[];
+}
+
+/**
+ * The review's sections with each skipped setting under the row of the
+ * setting that turns it off, or last in its section where the plan doesn't
+ * change that one. A section the plan only skips settings in comes after
+ * those it changes.
+ */
+export function reviewSections(
+  sections: readonly CompareSection[],
+  skipped: readonly SkippedSettingRow[],
+): ReviewSection[] {
+  const withChanges = sections.map((section): ReviewSection => {
+    const here = skipped.filter((row) => row.section === section.section);
+    return {
+      section: section.section,
+      title: section.title,
+      rows: [
+        ...section.rows.flatMap((row) => [row, ...here.filter((item) => item.after === row.key)]),
+        ...here.filter((item) => item.after === undefined || !section.rows.some((row) => row.key === item.after)),
+      ],
+    };
+  });
+  const onlySkipped = sectionsInShownOrder
+    .filter((name) => !sections.some((section) => section.section === name))
+    .flatMap((name): ReviewSection[] => {
+      const here = skipped.filter((row) => row.section === name);
+      return here.length === 0 ? [] : [{ section: name, title: sectionTitles[name], rows: here }];
+    });
+  return [...withChanges, ...onlySkipped];
 }
 
 /**

@@ -5,7 +5,7 @@ import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
 import type { Apply } from '../../app/apply/apply.js';
-import { type CompareRow, type LinkedReviewNote, sectionTitles } from '../../app/apply/comparison.js';
+import { type CompareRow, type LinkedReviewNote, reviewSections, sectionTitles } from '../../app/apply/comparison.js';
 import { repositoryAddress } from '../../app/navigation/addressed-repository.js';
 import type { Router } from '../../app/navigation/router.js';
 import { BarActions } from '../layout/action-bar.js';
@@ -14,7 +14,7 @@ import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
 import { OwnershipChoices } from './ownership.js';
-import { ReviewNotes } from './review-notes.js';
+import { ReviewNotes, SkippedSetting } from './review-notes.js';
 
 const kinds: Readonly<Record<CompareRow['kind'], string>> = { changes: 'Changes', adds: 'Adds', removes: 'Removes' };
 
@@ -383,13 +383,25 @@ export function ApplyPage({ apply, router, earlierApplies }: ApplyProps): JSX.El
               </div>
             )}
             <div class="groups">
-              {state.sections.map((section) => (
+              {reviewSections(state.sections, state.skippedSettings).map((section) => (
                 <section key={section.section} class="settings-group" aria-label={section.title}>
                   <h2>{section.title}</h2>
                   <ul class="rows" role="list">
-                    {section.rows.map((row) => (
-                      <Row key={`${row.label} ${row.key}`} row={row} apply={apply} />
-                    ))}
+                    {section.rows.map((row) =>
+                      row.kind === 'skipped' ? (
+                        <SkippedSetting
+                          key={`skipped ${row.key}`}
+                          row={row}
+                          editDisabled={working}
+                          onEdit={(about) => {
+                            setEditing({ about });
+                            run(apply.backToEdits());
+                          }}
+                        />
+                      ) : (
+                        <Row key={`${row.label} ${row.key}`} row={row} apply={apply} />
+                      ),
+                    )}
                   </ul>
                 </section>
               ))}

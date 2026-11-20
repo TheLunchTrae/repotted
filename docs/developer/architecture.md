@@ -361,7 +361,9 @@ values that turn it off, so a reader can name that setting itself.
 `describeWarning` in `format.ts` builds the line that text output and the MCP
 server print, as `Skipped <where>: <message>`, by profile keys. The web app
 builds its own review notes in `comparison.ts`, by the profile editor's
-labels.
+labels. `reviewOfWarnings` there turns each `not_applicable` warning about a
+setting the profile sets into a greyed row instead, placed by
+`settingCondition` under the setting that turns it off.
 
 Before anything is written, `readAccess` in `repositories.ts` reads the
 account's role from the repository and, with a Repotted App token, the

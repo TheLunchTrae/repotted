@@ -1,12 +1,19 @@
 import { type ConfigurationProblem, permissionsInProse } from '@repotted/core';
 import type { ComponentChildren, JSX } from 'preact';
-import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useId, useRef, useState } from 'preact/hooks';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import type { Router } from '../../app/navigation/router.js';
 import { entryListTitles, entryLists, type SaveMode } from '../../app/profile-editor/entry-edits.js';
-import type { EditorPlace, ProfileEditor, SettingFilter, SettingRow } from '../../app/profile-editor/profile-editor.js';
+import type {
+  ChoiceToConfirm,
+  EditorPlace,
+  ProfileEditor,
+  SettingFilter,
+  SettingRow,
+} from '../../app/profile-editor/profile-editor.js';
 import { sameValue } from '../../app/profile-editor/same-value.js';
+import type { SettingField } from '../../app/profile-editor/setting-fields.js';
 import type { Profiles } from '../../app/profiles/profiles.js';
 import { dirname } from '../../engine/path.js';
 import { BarActions } from '../layout/action-bar.js';
@@ -47,8 +54,10 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
               name={id}
               checked={sameValue(option.value, value)}
               disabled={row.greyedOutOnGitHubWhile !== undefined || row.missingPermissions.length > 0}
-              onChange={() => {
-                run(editor.set(field, option.value));
+              onChange={(event) => {
+                // The browser checks the option at once; it stays as it was while the choice waits for a yes.
+                event.currentTarget.checked = sameValue(option.value, value);
+                run(editor.choose(field, option.value));
               }}
             />
             <span>{option.label}</span>
@@ -101,6 +110,64 @@ function Control({ row, editor }: { readonly row: SettingRow; readonly editor: P
   );
 }
 
+/** A value in a sentence: on or off as such, and any other by its quoted name. */
+function valueInSentence(field: SettingField, value: unknown): string {
+  const named = describeValue(field, value);
+  return named === 'On' || named === 'Off' ? named.toLowerCase() : `“${named}”`;
+}
+
+function settingsCounted(count: number): string {
+  return `${String(count)} ${count === 1 ? 'setting' : 'settings'}`;
+}
+
+function ChoiceConfirmation({
+  choice,
+  editor,
+}: {
+  readonly choice: ChoiceToConfirm;
+  readonly editor: ProfileEditor;
+}): JSX.Element {
+  const headingId = useId();
+  const { field, value, turnsOff } = choice;
+  const removes = editor.canHoldDrafts;
+  return (
+    <div class="notice notice-drift choice-confirmation" role="alertdialog" aria-labelledby={headingId}>
+      <strong id={headingId}>
+        {removes ? 'Remove' : 'Skip'} {settingsCounted(turnsOff.length)}?
+      </strong>
+      <p class="small">
+        GitHub ignores {turnsOff.length === 1 ? 'it' : 'these'} while {field.label} is {valueInSentence(field, value)},
+        so {removes ? 'saving removes them from this profile' : 'this apply skips them'}:
+      </p>
+      <ul class="small">
+        {turnsOff.map((other) => (
+          <li key={other.key}>{other.label}</li>
+        ))}
+      </ul>
+      <div class="notice-actions">
+        <button
+          class="button button-small button-danger"
+          type="button"
+          onClick={() => {
+            run(editor.confirmChoice());
+          }}
+        >
+          {removes ? 'Remove' : 'Skip'}
+        </button>
+        <button
+          class="button button-small"
+          type="button"
+          onClick={() => {
+            editor.cancelChoice();
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: ProfileEditor }): JSX.Element {
   const { field } = row;
   const id = `setting-${field.path.join('-')}`;
@@ -109,7 +176,7 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
   const here = editor.canHoldDrafts ? 'profile' : 'apply';
   return (
     <div
-      class={`setting${field.indentedUnderPreviousSetting ? ' setting-nested' : ''}${row.typedTextProblem !== undefined ? ' setting-problem' : row.unsaved ? ' setting-unsaved' : ''}`}
+      class={`setting${field.indentedUnderPreviousSetting ? ' setting-nested' : ''}${row.typedTextProblem !== undefined ? ' setting-problem' : row.unsaved ? ' setting-unsaved' : ''}${row.turnedOffByChoiceToConfirm ? ' setting-turning-off' : ''}`}
     >
       <div class="setting-head">
         <div class="setting-text">
@@ -184,11 +251,33 @@ function Setting({ row, editor }: { readonly row: SettingRow; readonly editor: P
           </button>
         </p>
       ))}
-      {row.hiddenNamed > 0 && (
-        <p class="muted small">
-          The profile still names {row.hiddenNamed} {row.hiddenNamed === 1 ? 'setting' : 'settings'} that GitHub hides
-          for this value. They are ignored when applying and removed from this file when saving.
-        </p>
+      {row.choiceToConfirm !== undefined && <ChoiceConfirmation choice={row.choiceToConfirm} editor={editor} />}
+      {row.turnsOff.length > 0 && (
+        <div class="small turns-off">
+          <p>
+            {editor.canHoldDrafts ? 'Saving removes' : 'This apply skips'} {settingsCounted(row.turnsOff.length)} GitHub
+            ignores while this is {valueInSentence(field, row.value)}:
+          </p>
+          <ul>
+            {row.turnsOff.map((other) => (
+              <li key={other.key}>{other.label}</li>
+            ))}
+          </ul>
+          {row.unsaved && (
+            <p>
+              <button
+                class="link"
+                type="button"
+                aria-label={`Undo the change to ${field.label}`}
+                onClick={() => {
+                  run(editor.reset(field));
+                }}
+              >
+                Undo
+              </button>
+            </p>
+          )}
+        </div>
       )}
       {field.note !== undefined && <p class="muted small">{field.note}</p>}
       {field.kind === 'list' && field.key === 'selected_actions.patterns_allowed' && editor.patterns !== undefined && (

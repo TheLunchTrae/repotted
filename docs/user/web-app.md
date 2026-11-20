@@ -304,6 +304,14 @@ what it will have after the apply. From there you can:
 - Click **Edit** beside a review note that names a setting or an entry to go
   back to the edits at it, as **Go to it** does. A setting that another
   setting hides goes to the one that hides it.
+
+A setting the profile sets that the apply skips, because another setting
+turns it off on GitHub, shows greyed out in its section with the value it
+would have had and why it isn't applied. It sits under the setting that turns
+it off when the apply changes that one, and last in its section otherwise,
+as when the repository's own value turns it off. Click its **Edit** to go
+back to the edits at it.
+
 - Click **Review again** to read the profile and GitHub again.
 
 A change GitHub would refuse says what it needs, as on a comparison.
@@ -712,12 +720,21 @@ you change anything else, save, or the profile is read again after a sync.
 
 Options that GitHub only offers with a certain value of the setting above
 them follow that setting, and so do the options under them. Where GitHub
-hides them, the tab does too, and the setting that hides them says how many
-hidden ones the profile still names. With **Actions** set to **Off**, for
-example, **Allowed actions** and the options under it are hidden. Where
-GitHub greys them out, they stay in place, can't be changed, and say which
-setting turns them off. Applying ignores these settings, and saving removes
-them from the edited file.
+hides them, the tab does too. With **Actions** set to **Off**, for example,
+**Allowed actions** and the options under it are hidden. Where GitHub greys
+them out, they stay in place, can't be changed, and say which setting turns
+them off. Applying skips these settings, and saving removes them from the
+edited file.
+
+Choosing a value that turns off settings the profile sets asks first. A
+question opens under the setting, such as **Remove 2 settings?**, and lists
+the settings it turns off, which are highlighted below it. Click **Remove**
+to choose the value, or **Cancel** to keep the one it had. Any other change
+withdraws the question. Afterwards the setting lists the ones that saving
+removes, with **Undo** while the change isn't saved. Only settings the open
+profile's own file names count, since a save leaves a base profile's file as
+it is. In an apply's edits, the question is **Skip**, and it counts every
+setting with a value, since the apply skips them.
 
 On the **Actions** tab, with **Allowed actions** set to **Selected**,
 **Allowed action patterns** takes one pattern a line, such as `octo-org/*`,

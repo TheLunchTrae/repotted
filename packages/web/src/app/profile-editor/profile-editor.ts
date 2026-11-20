@@ -120,6 +120,16 @@ interface TurnedOffOnGitHub extends SettingWithValue {
   readonly hidden: boolean;
 }
 
+/** A value picked for a setting that waits for a yes, since it turns off settings that would then be dropped. */
+export interface ChoiceToConfirm extends SettingWithValue {
+  readonly turnsOff: readonly SettingField[];
+}
+
+interface PendingChoice extends SettingWithValue {
+  /** The edits it was picked over; any change to them withdraws it. */
+  readonly over: ReadonlyMap<string, SettingEdit>;
+}
+
 export interface SettingRow {
   readonly field: SettingField;
   readonly optionsForProfileOwnerType: readonly SettingOption[];
@@ -138,8 +148,15 @@ export interface SettingRow {
   readonly greyedOutOnGitHubWhile: SettingWithValue | undefined;
   readonly textBeingTyped: string | undefined;
   readonly typedTextProblem: string | undefined;
-  /** How many settings under it GitHub hides for its value while a profile still names them. */
-  readonly hiddenNamed: number;
+  /**
+   * The settings with a value that its value turns off on GitHub, which a
+   * save removes from the profile, or which an apply skips.
+   */
+  readonly turnsOff: readonly SettingField[];
+  /** A value picked for it that waits for a yes, with the settings that value would turn off. */
+  readonly choiceToConfirm: ChoiceToConfirm | undefined;
+  /** Whether a value waiting for a yes on another setting would turn this one off. */
+  readonly turnedOffByChoiceToConfirm: boolean;
   /** The settings its value hides whose typed text can't be a value, which holds the save back. */
   readonly hiddenWithTextThatCannotBeSaved: readonly SettingField[];
   /** What the repository's installation of the Repotted App lacks to change the setting, which turns it off. */
@@ -467,6 +484,7 @@ export class ProfileEditor {
   /** Undefined unless there are unsaved changes the engine accepts. */
   readonly #profileAsSaveWouldLeaveIt = signal<ResolvedProfile | undefined>(undefined);
   readonly #edits = signal<ReadonlyMap<string, SettingEdit>>(new Map());
+  readonly #pendingChoice = signal<PendingChoice | undefined>(undefined);
   readonly #typed = signal<ReadonlyMap<string, TypedText>>(new Map());
   readonly #batchUndo = signal<BatchUndo | undefined>(undefined);
   readonly #entryEdits = new EntryEdits();
@@ -1118,6 +1136,42 @@ export class ProfileEditor {
     this.#batchUndo.value = undefined;
     this.#forget(field);
     await this.#change(field, value);
+  }
+
+  /**
+   * A value picked in the editor. One that would turn off settings with a
+   * value, which a save then drops, waits for `confirmChoice` instead.
+   */
+  async choose(field: SettingField, value: unknown): Promise<void> {
+    const edits = this.#edits.value;
+    if (this.#settingsNewlyTurnedOffBy(field, value, edits).length > 0) {
+      this.#pendingChoice.value = { field, value, over: edits };
+      return;
+    }
+    this.#pendingChoice.value = undefined;
+    await this.set(field, value);
+  }
+
+  readonly choiceToConfirm = computed((): ChoiceToConfirm | undefined => {
+    const pending = this.#pendingChoice.value;
+    // A change since it was picked withdraws it, since it may no longer turn off what it named.
+    if (pending === undefined || pending.over !== this.#edits.value) {
+      return undefined;
+    }
+    const turnsOff = this.#settingsNewlyTurnedOffBy(pending.field, pending.value, pending.over);
+    return turnsOff.length === 0 ? undefined : { field: pending.field, value: pending.value, turnsOff };
+  });
+
+  async confirmChoice(): Promise<void> {
+    const choice = this.choiceToConfirm.value;
+    this.#pendingChoice.value = undefined;
+    if (choice !== undefined) {
+      await this.set(choice.field, choice.value);
+    }
+  }
+
+  cancelChoice(): void {
+    this.#pendingChoice.value = undefined;
   }
 
   /**
@@ -1957,12 +2011,55 @@ export class ProfileEditor {
   }
 
   /** Those whose value comes from this profile's own file, its draft, or an unsaved change, and not from a base profile. */
-  #namedHereAmong(fields: readonly SettingField[]): readonly SettingField[] {
+  #namedHereAmong(
+    fields: readonly SettingField[],
+    edits: ReadonlyMap<string, SettingEdit> = this.#edits.value,
+  ): readonly SettingField[] {
     return fields.filter((field) => {
-      const edit = this.#edits.value.get(keyOf(field.path));
+      const edit = edits.get(keyOf(field.path));
       const own = edit === undefined ? this.#valueRowStartsFrom(field) : edit.value;
       return own !== undefined;
     });
+  }
+
+  /**
+   * Those with a value. A profile's save removes the settings a value turns
+   * off only from its own file, so there only its own count; an apply skips
+   * any with a value, from the profile or its edits.
+   */
+  #withValueAmong(fields: readonly SettingField[], edits: ReadonlyMap<string, SettingEdit>): readonly SettingField[] {
+    return this.canHoldDrafts
+      ? this.#namedHereAmong(fields, edits)
+      : fields.filter((field) => this.#valueOf(field, edits) !== undefined);
+  }
+
+  /** The settings with a value that `field`'s value turns off on GitHub. */
+  #settingsTurnedOffBy(field: SettingField, edits: ReadonlyMap<string, SettingEdit>): readonly SettingField[] {
+    const owner = this.ownerType.value;
+    return this.#withValueAmong(
+      fieldsOf(field.section).filter(
+        (other) => fits(owner, needOf(other.path)) && this.#turnedOffOnGitHub(other, edits)?.field === field,
+      ),
+      edits,
+    );
+  }
+
+  #settingsNewlyTurnedOffBy(
+    field: SettingField,
+    value: unknown,
+    edits: ReadonlyMap<string, SettingEdit>,
+  ): readonly SettingField[] {
+    const before = this.#settingsTurnedOffBy(field, edits);
+    const after = new Map(edits);
+    this.#changeIn(after, field, value);
+    const owner = this.ownerType.value;
+    // What has a value is judged before the change, which may itself stop naming a setting it turns off.
+    return this.#withValueAmong(fieldsOf(field.section), edits).filter(
+      (other) =>
+        !before.includes(other) &&
+        fits(owner, needOf(other.path)) &&
+        this.#turnedOffOnGitHub(other, after)?.field === field,
+    );
   }
 
   #batchOf(group: SettingGroup): GroupBatch {
@@ -2128,6 +2225,7 @@ export class ProfileEditor {
     const section = fieldsOf(group.fields[0]?.section ?? '');
     const owner = this.ownerType.value;
     const installation = this.#installation.value;
+    const choice = this.choiceToConfirm.value;
     return (
       group.fields
         // What owners of the profile's type don't have is left out, settings and choices, so it is never part of a save.
@@ -2166,14 +2264,9 @@ export class ProfileEditor {
                 this.#turnedOffOnGitHub(other)?.field === field &&
                 this.#typed.value.get(keyOf(other.path))?.problem !== undefined,
             ),
-            hiddenNamed: section.filter((other) => {
-              const otherTurnedOff = this.#turnedOffOnGitHub(other);
-              return (
-                otherTurnedOff?.hidden === true &&
-                otherTurnedOff.field === field &&
-                this.#valueOf(other, edits) !== undefined
-              );
-            }).length,
+            turnsOff: this.#settingsTurnedOffBy(field, edits),
+            choiceToConfirm: choice?.field === field ? choice : undefined,
+            turnedOffByChoiceToConfirm: choice?.turnsOff.includes(field) === true,
             missingPermissions:
               installation === undefined
                 ? []

@@ -173,7 +173,8 @@ does the same, so a profile reads like the page it sets. Core's
 - **Off**: GitHub shows the option greyed out. The row stays in place and
   can't be changed, and it names the setting and the value that turn it off.
 
-A setting that hides others says how many of them the profile still names.
+A setting that turns others off lists those the profile still names, and a
+value that would turn off settings with a value asks first.
 The engine uses the same conditions to omit inactive settings from captures
 and saved edits, and to ignore them with a `not_applicable` warning during
 planning. [Setting dependencies](architecture.md#setting-dependencies) explains
@@ -200,7 +201,7 @@ its own setting's value, and a row under an off row is off, unless its own
 setting hides it. Each field names only the one setting just above it, and
 `ProfileEditor` follows the chain up, so an off row names the highest
 setting that turns it off, and the highest visible setting that hides a row
-counts it among the hidden ones the profile still names. With **Actions**
+lists it among the ones the profile still names. With **Actions**
 off, for example, **Actions by GitHub** is hidden even while **Allowed actions**
 holds **Selected**.
 
