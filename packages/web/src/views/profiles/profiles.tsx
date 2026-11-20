@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { Router } from '../../app/navigation/router.js';
 import type { SaveMode } from '../../app/profile-editor/entry-edits.js';
+import type { EditorPlace } from '../../app/profile-editor/profile-editor.js';
 import type { BranchPreview } from '../../app/profiles/branch-preview.js';
 import type { ProfileFolderNode, ProfileListing, Profiles } from '../../app/profiles/profiles.js';
 import type { Repositories } from '../../app/repositories/repositories.js';
@@ -12,6 +13,7 @@ import { useProfileConfirmation } from '../layout/notifications.js';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
+import { InvalidProfile } from '../profile-editor/invalid-profile.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
 import { RepairProfile } from '../profile-editor/profile-repair.js';
 import { previewAddress, PreviewPicker } from './branch-preview.js';
@@ -568,6 +570,7 @@ export function Profile({ listing, profiles, router, standalone, onSaved }: Prof
   const [showYaml, setShowYaml] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [changingOwner, setChangingOwner] = useState(false);
+  const [landOn, setLandOn] = useState<EditorPlace | undefined>(undefined);
   const couldNotRead = profiles.settingsCaptureCouldNotRead.value;
   const editor = profiles.editor.value;
   const opened = profiles.opened.value;
@@ -720,11 +723,21 @@ export function Profile({ listing, profiles, router, standalone, onSaved }: Prof
           )}
         </div>
       )}
-      {listing.problem !== null && editor?.repair.value === undefined && (
-        <p class="notice notice-problem" role="alert">
-          {listing.problem}
-        </p>
-      )}
+      {listing.problem !== null &&
+        editor?.repair.value === undefined &&
+        (editor?.loaded.value === true && editor.configurationProblems.value.length > 0 ? (
+          <InvalidProfile
+            editor={editor}
+            onGoTo={(place) => {
+              // A new object each time, so the same link goes again.
+              setLandOn({ ...place });
+            }}
+          />
+        ) : (
+          <p class="notice notice-problem" role="alert">
+            {listing.problem}
+          </p>
+        ))}
       {editor?.repair.value !== undefined && <RepairProfile editor={editor} save={save} />}
       {listing.kind !== undefined && standalone !== true && (
         <p class="notice">
@@ -749,6 +762,10 @@ export function Profile({ listing, profiles, router, standalone, onSaved }: Prof
           }}
           sharedDefinitions={listing.kind === undefined ? { profiles, router } : undefined}
           ownerTypeHasPushRulesets={listing.owner_type !== 'user'}
+          landOn={landOn}
+          onLanded={() => {
+            setLandOn(undefined);
+          }}
         />
       )}
       {showYaml && opened?.file === listing.file && (

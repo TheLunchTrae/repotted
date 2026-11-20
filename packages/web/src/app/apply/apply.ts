@@ -35,7 +35,14 @@ import {
 import { profileName, profileVersion } from '../repositories/repository-profiles.js';
 import type { AppliedVersion } from '../repositories/saved-assignments.js';
 import { type ApplyQueue, type AssignmentRecord, pageQueue } from './apply-queue.js';
-import { type ComparedProfile, type CompareSection, compareSections, draftNote, reviewNote } from './comparison.js';
+import {
+  type ComparedProfile,
+  type CompareSection,
+  compareSections,
+  draftNote,
+  type LinkedReviewNote,
+  linkedReviewNote,
+} from './comparison.js';
 
 export interface Reviewed {
   /** Travels with the review, so no other plan can be applied in its place. */
@@ -45,7 +52,7 @@ export interface Reviewed {
   /** By the keys that put each back. */
   readonly leftOut: readonly string[];
   readonly skippedDrafts: readonly string[];
-  readonly warnings: readonly string[];
+  readonly warnings: readonly LinkedReviewNote[];
   readonly appAccess: { readonly settings: string } | 'install' | undefined;
   /** Why the last try to apply wrote nothing, or stopped partway, with what this review then shows. */
   readonly notice: string | undefined;
@@ -637,7 +644,7 @@ export class Apply {
       fromProfile: staged.staged.profiles.length > 0,
       leftOut: staged.staged.exclude,
       skippedDrafts: staged.plan.skipped.map(draftNote),
-      warnings: staged.plan.warnings.map(reviewNote),
+      warnings: staged.plan.warnings.map(linkedReviewNote),
       appAccess:
         access.app.status === 'not_installed'
           ? 'install'

@@ -41,7 +41,8 @@ import {
   compareSections,
   draftNote,
   exclusionLabel,
-  reviewNote,
+  type LinkedReviewNote,
+  linkedReviewNote,
 } from './comparison.js';
 
 export interface BatchMemberView {
@@ -54,7 +55,7 @@ export interface BatchMemberView {
   readonly sections: readonly CompareSection[];
   readonly leftOut: readonly string[];
   readonly skippedDrafts: readonly string[];
-  readonly warnings: readonly string[];
+  readonly warnings: readonly LinkedReviewNote[];
 }
 
 /** `key` leaves the change out everywhere; `repositories` names those whose plans include it. */
@@ -169,7 +170,7 @@ function membersOf(plan: BatchPlan, assignments: ProfileAssignments | undefined)
       sections: compareSections(member, locks, member.exclusions),
       leftOut: member.staged.exclude,
       skippedDrafts: member.skipped.map(draftNote),
-      warnings: member.warnings.map(reviewNote),
+      warnings: member.warnings.map(linkedReviewNote),
     };
   });
   const rest = (repository: string, status: 'failed' | 'left-out', message: string | undefined): BatchMemberView => ({

@@ -1,15 +1,16 @@
-import { permissionsInProse } from '@repotted/core';
+import { type ConfigurationProblem, permissionsInProse } from '@repotted/core';
 import type { ComponentChildren, JSX } from 'preact';
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 
 import type { Router } from '../../app/navigation/router.js';
 import { entryListTitles, entryLists, type SaveMode } from '../../app/profile-editor/entry-edits.js';
-import type { ProfileEditor, SaveProblem, SettingFilter, SettingRow } from '../../app/profile-editor/profile-editor.js';
+import type { EditorPlace, ProfileEditor, SettingFilter, SettingRow } from '../../app/profile-editor/profile-editor.js';
 import { sameValue } from '../../app/profile-editor/same-value.js';
 import type { Profiles } from '../../app/profiles/profiles.js';
 import { dirname } from '../../engine/path.js';
 import { BarActions } from '../layout/action-bar.js';
+import { land } from '../layout/land.js';
 import { run } from '../layout/run.js';
 import { SharedDefinition } from '../profiles/shared-definitions.js';
 import { ActionSearchBox } from './action-search.js';
@@ -327,6 +328,10 @@ function DraftBanner({ editor, saving }: DraftProps): JSX.Element | null {
   );
 }
 
+function configurationNoticeId(editor: ProfileEditor, problem: ConfigurationProblem): string {
+  return `configuration-${String(editor.configurationProblems.value.indexOf(problem))}`;
+}
+
 const filterNames: readonly { readonly id: SettingFilter; readonly name: string }[] = [
   { id: 'managed', name: 'Managed' },
   { id: 'unsaved', name: 'Not saved yet' },
@@ -339,6 +344,10 @@ interface ProfileSettingsProps {
   readonly saving: EditorSaving;
   readonly ownerTypeHasPushRulesets: boolean;
   readonly sharedDefinitions?: { readonly profiles: Profiles; readonly router: Router } | undefined;
+  /** A place to go to, as when a link outside the editor names one; each new object is gone to. */
+  readonly landOn?: EditorPlace | undefined;
+  /** Once the editor has gone to `landOn`, so the owner lets go of it and a later editor doesn't go there again. */
+  readonly onLanded?: (() => void) | undefined;
 }
 
 export function ProfileSettings({
@@ -347,6 +356,8 @@ export function ProfileSettings({
   saving,
   ownerTypeHasPushRulesets,
   sharedDefinitions,
+  landOn,
+  onLanded,
 }: ProfileSettingsProps): JSX.Element {
   const [savingChanges, saveChanges] = usePendingAction();
   const [savingDraft, saveDraft] = usePendingAction();
@@ -395,37 +406,64 @@ export function ProfileSettings({
       />
     );
   const [entryGoTo, setEntryGoTo] = useState<EntryGoTo | undefined>(undefined);
-  const [settingToFocus, setSettingToFocus] = useState<{ readonly id: string } | undefined>(undefined);
-  // The setting shows once its tab does, so it takes the keyboard after that render.
+  const [placeToLand, setPlaceToLand] = useState<
+    { readonly id: string; readonly marks: string; readonly orElseTab?: string } | undefined
+  >(undefined);
+  // The place shows once its tab does, so it takes the keyboard after that render.
   useEffect(() => {
-    if (settingToFocus === undefined) {
+    if (placeToLand === undefined) {
       return;
     }
-    const target = document.getElementById(settingToFocus.id);
-    target?.scrollIntoView({ block: 'center' });
-    target?.focus();
-    setSettingToFocus(undefined);
-  }, [settingToFocus]);
-  const goTo = (problem: SaveProblem): void => {
-    const { place } = problem;
-    if (place.kind === 'profile') {
-      return;
-    }
-    if (place.kind === 'configuration') {
-      editor.clearFilters();
-      if (tabNames.some((tab) => tab.id === problem.tab)) {
-        setTab(problem.tab);
+    // A place the editor doesn't draw, as a setting the profile's owner type lacks, falls back to its tab.
+    const element =
+      document.getElementById(placeToLand.id) ??
+      (placeToLand.orElseTab === undefined ? null : document.getElementById(`tab-${placeToLand.orElseTab}`));
+    const marked = element?.closest<HTMLElement>(placeToLand.marks) ?? element;
+    if (element !== null && marked !== null) {
+      // A choice's radio group has no id of its own, so its chosen option, or else its first, takes the keyboard.
+      const target = element.matches('input, select, textarea, button')
+        ? element
+        : (marked.querySelector<HTMLElement>('input:checked:enabled') ??
+          marked.querySelector<HTMLElement>('input:enabled, select:enabled, textarea:enabled') ??
+          marked);
+      // A place with nothing to type in or choose, as a setting turned off on GitHub, takes the keyboard itself.
+      if (target === marked && !marked.hasAttribute('tabindex')) {
+        marked.tabIndex = -1;
       }
+      land(target, marked);
+    }
+    setPlaceToLand(undefined);
+  }, [placeToLand]);
+  const goTo = (place: EditorPlace): void => {
+    if (place.kind === 'configuration') {
+      setPlaceToLand({ id: configurationNoticeId(editor, place.problem), marks: '.notice' });
       return;
     }
     editor.clearFilters();
-    setTab(problem.tab);
+    setEntryGoTo(undefined);
+    if (!tabNames.some((item) => item.id === place.tab)) {
+      return;
+    }
+    setTab(place.tab);
     if (place.kind === 'setting') {
-      setSettingToFocus({ id: `setting-${place.field.path.join('-')}` });
+      setPlaceToLand({
+        id: `setting-${place.field.path.join('-')}-label`,
+        marks: '.setting, .tab',
+        orElseTab: place.tab,
+      });
+    } else if (place.kind === 'entry') {
+      setEntryGoTo({ list: place.tab, rowKey: place.row.key, field: place.field });
     } else {
-      setEntryGoTo({ list: place.row.list, rowKey: place.row.key, field: place.field });
+      setPlaceToLand({ id: `tab-${place.tab}`, marks: '.tab' });
     }
   };
+  // Each new place asked for is gone to, as the same place asked for again is.
+  useEffect(() => {
+    if (landOn !== undefined) {
+      goTo(landOn);
+      onLanded?.();
+    }
+  }, [landOn]);
   const settingsUrl = editor.installationSettingsUrl.value;
   const filtering = editor.definitionSection.value === undefined && editor.filtering.value;
   const preview = editor.preview.value;
@@ -487,7 +525,13 @@ export function ProfileSettings({
             return null;
           }
           return (
-            <div key={problem.key} class="notice" role="alert">
+            <div
+              key={problem.key}
+              id={configurationNoticeId(editor, place.problem)}
+              class="notice"
+              role="alert"
+              tabIndex={-1}
+            >
               <strong>{problem.name}</strong>
               <p class="problem">{problem.message}</p>
               {place.problem.file === editor.file ? (

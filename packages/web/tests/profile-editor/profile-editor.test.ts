@@ -8,7 +8,7 @@ import {
   withBypassMode,
 } from '../../src/app/profile-editor/bypass-actors.js';
 import type { EntryList, EntryRow } from '../../src/app/profile-editor/entry-edits.js';
-import { ProfileEditor, type SettingRow } from '../../src/app/profile-editor/profile-editor.js';
+import { nameOfPlace, ProfileEditor, type SettingRow } from '../../src/app/profile-editor/profile-editor.js';
 import { type SettingField, settingSections } from '../../src/app/profile-editor/setting-fields.js';
 import { mkdir, readFile, rm, writeFile } from '../../src/engine/files.js';
 
@@ -1191,3 +1191,59 @@ test.each(['code_scanning_default_setup', 'code_quality_setup'])(
     expect(editor.unsavedChangesProblem.value).toBeUndefined();
   },
 );
+
+test('a setting or entry named by its section and key leads to where the editor shows it', async () => {
+  const editor = await opened({
+    'web.yaml':
+      'merge:\n  allow_merge_commit: false\n  merge_commit_title: PR_TITLE\nactions:\n  allowed_actions: selected\nlabels:\n  - name: Bug\n    color: d73a4a\nenvironments:\n  - name: Production\n',
+  });
+
+  // A hidden setting leads to the one whose value hides it, since that is what brings it back.
+  expect(editor.placeOf('merge', 'merge_commit_title')).toEqual({
+    kind: 'setting',
+    tab: 'merge',
+    field: field('merge.allow_merge_commit'),
+  });
+  expect(editor.placeOf('actions', 'selected_actions.patterns_allowed.0')).toEqual({
+    kind: 'setting',
+    tab: 'actions',
+    field: field('actions.selected_actions.patterns_allowed'),
+  });
+  expect(editor.placeOf('security', 'security_and_analysis.secret_scanning.status')).toEqual({
+    kind: 'setting',
+    tab: 'security',
+    field: field('security.security_and_analysis.secret_scanning'),
+  });
+  expect(editor.placeOf('labels', 'Bug')).toMatchObject({ kind: 'entry', tab: 'labels', row: { savedName: 'Bug' } });
+  expect(editor.placeOf('environments', 'production')).toMatchObject({
+    kind: 'entry',
+    row: { savedName: 'Production' },
+  });
+  expect(editor.placeOf('labels', 'gone')).toEqual({ kind: 'tab', tab: 'labels' });
+  expect(editor.placeOf('nothing', 'here')).toBeUndefined();
+});
+
+test('a problem in the profile file leads to its setting, its entry, or its own notice', async () => {
+  const names = (editor: ProfileEditor) =>
+    editor.configurationProblems.value.map((problem) => {
+      const place = editor.placeOfConfigurationProblem(problem);
+      return [place.kind, nameOfPlace(place)];
+    });
+
+  const named = await opened({ 'web.yaml': 'repository:\n  has_wiki: broken\nlabels: [{ name: bug, color: nope }]\n' });
+  expect(names(named)).toEqual([
+    ['setting', 'Wiki in Repository'],
+    ['entry', 'Label "bug"'],
+  ]);
+  const unreadable = await opened({ 'other.yaml': 'labels: [42]\n' }, 'other.yaml');
+  expect(names(unreadable)).toEqual([['configuration', 'labels.0']]);
+  // A base profile's entry is not the entry at the same position here.
+  const extending = await opened(
+    {
+      'base.yaml': 'labels: [{ name: x, color: nope }]\n',
+      'web.yaml': 'extends: base.yaml\nlabels: [{ name: bug, color: d73a4a }]\n',
+    },
+    'web.yaml',
+  );
+  expect(names(extending)[0]).toEqual(['configuration', 'labels.0.color']);
+});

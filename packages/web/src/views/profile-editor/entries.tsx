@@ -35,6 +35,7 @@ import {
 } from '../../app/profile-editor/entry-forms.js';
 import type { EntryListBatch, ProfileEditor } from '../../app/profile-editor/profile-editor.js';
 import { sameValue } from '../../app/profile-editor/same-value.js';
+import { land } from '../layout/land.js';
 import { run } from '../layout/run.js';
 import { type BatchAction, BatchActions, describeEntriesDone } from './batch-actions.js';
 import { BypassList } from './bypass-list.js';
@@ -1043,15 +1044,22 @@ function EntryForm({
   const noun = nouns[row.list];
   const back = useRef<HTMLButtonElement>(null);
   const form = useRef<HTMLDivElement>(null);
-  // The form takes the keyboard when it opens, since the row that opened it is gone, or the field it opened to go to.
+  // The form takes the keyboard when it opens, since the row that opened it is gone, or the field it opened to go
+  // to, which is marked; for the entry as a whole, that is the field that names it.
   useEffect(() => {
+    if (goTo === undefined) {
+      back.current?.focus();
+      return;
+    }
     const field =
-      goTo === undefined
-        ? undefined
-        : (form.current?.querySelector<HTMLElement>(`[data-entry-field="${goTo.field}"]`) ??
-          form.current?.querySelector<HTMLElement>('[aria-invalid="true"]'));
-    field?.scrollIntoView({ block: 'center' });
-    (field ?? back.current)?.focus();
+      form.current?.querySelector<HTMLElement>(`[data-entry-field="${goTo.field}"]`) ??
+      form.current?.querySelector<HTMLElement>('[aria-invalid="true"]') ??
+      form.current?.querySelector<HTMLElement>('[data-entry-field="name"]');
+    if (field === null || field === undefined) {
+      back.current?.focus();
+    } else {
+      land(field, field.closest<HTMLElement>('.setting, .settings-group') ?? field);
+    }
   }, [goTo]);
   const problemIn = (field: EntryField): string | undefined =>
     row.applyProblemField === field ? row.applyProblem : undefined;
