@@ -1109,7 +1109,9 @@ export class Profiles {
 
   /**
    * Stages the import and opens its editor; `names` renames carried
-   * definitions by their reference. A cancel meanwhile leaves no import.
+   * definitions by their reference. Staging takes a turn of the queue, so
+   * the definitions are placed against the folder as the syncs before it
+   * left it. A cancel meanwhile leaves no import.
    */
   chooseImport(choice: BundledChoice, names?: Readonly<Record<string, string>>): Promise<string | undefined> {
     return this.#importTask(async () => {
@@ -1118,20 +1120,22 @@ export class Profiles {
         return 'Choose a file to import.';
       }
       const library = definitionTypes.find((item) => item.kind === importing.imported.kind);
-      const folder = this.folder.value;
       let staged: StagedImport;
       try {
-        staged = await stageProfileImport({
-          folder,
-          staging: importStaging,
-          destination: join(
+        staged = await this.#work(() => {
+          const folder = this.folder.value;
+          return stageProfileImport({
             folder,
-            ...(library === undefined ? [] : ['definitions', library.kind]),
-            `${importing.name}.yaml`,
-          ),
-          imported: importing.imported,
-          choice,
-          ...(names === undefined ? {} : { names }),
+            staging: importStaging,
+            destination: join(
+              folder,
+              ...(library === undefined ? [] : ['definitions', library.kind]),
+              `${importing.name}.yaml`,
+            ),
+            imported: importing.imported,
+            choice,
+            ...(names === undefined ? {} : { names }),
+          });
         });
       } catch (error) {
         return messageOf(error);

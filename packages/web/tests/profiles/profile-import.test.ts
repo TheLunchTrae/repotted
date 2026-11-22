@@ -107,15 +107,13 @@ test('a definition matched at staging that is gone at save is refused', async ()
   await expect(files.readFile('/profiles/apps/service.yaml', 'utf8')).rejects.toThrow('ENOENT');
 });
 
-test('a taken name refuses to save until the definition is renamed', async () => {
+test('a taken name refuses to stage until the definition is renamed', async () => {
   await write(
     '/profiles/definitions/ruleset/main.yaml',
     'kind: ruleset\nrulesets: [{ name: Main, enforcement: disabled }]\n',
   );
-  const staged = await stage('reusable');
-  expect(staged.definitions[0]?.state).toBe('taken');
-  await expect(saveStagedImport(staged)).rejects.toThrow('A different definition named main is already there.');
-  await expect(files.readFile('/profiles/apps/service.yaml', 'utf8')).rejects.toThrow('ENOENT');
+  await expect(stage('reusable')).rejects.toThrow('A different definition named main is already there.');
+  await expect(files.readdir(staging, { withFileTypes: true })).rejects.toThrow('ENOENT');
 
   const renamed = await stage('reusable', { '../definitions/ruleset/main.yaml': 'imported main' });
   await saveStagedImport(renamed);

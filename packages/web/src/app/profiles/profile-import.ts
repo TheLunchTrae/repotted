@@ -122,6 +122,12 @@ export async function stageProfileImport(options: {
     throw new Error('Import into the profiles folder.');
   }
   const definitions = choice === 'reusable' ? await placeBundledDefinitions(folder, imported, options.names) : [];
+  const taken = definitions.filter((item) => item.state === 'taken');
+  if (taken.length > 0) {
+    throw new Error(
+      `A different definition named ${taken.map((item) => item.name).join(', ')} is already there. Give this one another name.`,
+    );
+  }
   const text = choice === 'inside' ? withBundledInside(imported) : imported.text;
   const stagedFile = join(staging, relative(folder, destination));
   const carried = new Map(
