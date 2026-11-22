@@ -230,7 +230,7 @@ localStorage.setItem(
     'lunch/a_repository_name_with_no_hyphens_in_it_at_all': { profiles: ['base.yaml', 'teams/website.yaml'] },
     'lunch/app': { profiles: ['base.yaml', 'teams/website.yaml', 'teams/mobile.yaml', 'archived.yaml'] },
     'lunch/docs': {
-      profiles: ['teams/website.yaml'],
+      profiles: ['base.yaml', 'teams/website.yaml'],
       applied: [{ profile: 'teams/website.yaml', version: 'an older version' }],
     },
   }),
