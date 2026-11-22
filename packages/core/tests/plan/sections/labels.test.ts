@@ -11,7 +11,7 @@ import { applyPlan, StalePlanError } from '../../../src/plan/apply.js';
 import { captureProfile } from '../../../src/plan/capture.js';
 import { formatPlan } from '../../../src/plan/format.js';
 import { createPlan, skippedDrafts } from '../../../src/plan/plan.js';
-import { editProfile, resolveProfile } from '../../../src/profiles/profile.js';
+import { editProfile, resolveProfile, resolveProfilesTogether } from '../../../src/profiles/profile.js';
 import { type LabelEntry, profileFileJsonSchema } from '../../../src/profiles/schema.js';
 import { createStagedApply, editStagedApply, planStagedApply } from '../../../src/staging/staged.js';
 import { answered, FakeGitHub } from '../../support/fake-github.js';
@@ -337,11 +337,11 @@ describe('labels in profile files', () => {
     ]);
   });
 
-  test('replace a base label named in any case across extends, as rulesets are replaced', async () => {
+  test("replace an earlier profile's label named in any case, as rulesets are replaced", async () => {
     const base = await write("labels: [{ name: Bug, color: 'd73a4a', description: Broken }, { name: docs }]\n");
-    const own = await write(`extends: ${base}\nlabels: [{ name: bug, color: 'ff0000' }]\n`);
+    const own = await write("labels: [{ name: bug, color: 'ff0000' }]\n");
 
-    const resolved = await resolveProfile(own);
+    const resolved = await resolveProfilesTogether([base, own]);
 
     expect(resolved.profile.labels).toEqual([{ name: 'bug', color: 'ff0000' }, { name: 'docs' }]);
     expect(resolved.sources.labels).toEqual({ bug: own, docs: base });

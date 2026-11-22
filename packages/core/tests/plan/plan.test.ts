@@ -13,14 +13,16 @@ import { createPlan, skippedDrafts } from '../../src/plan/plan.js';
 import { parsePlan } from '../../src/plan/saved-plan.js';
 import { EnvironmentSettingsError } from '../../src/plan/sections/environments.js';
 import { MergeSettingsError } from '../../src/plan/sections/repository.js';
-import { resolveProfile } from '../../src/profiles/profile.js';
+import { resolveProfile, resolveProfilesTogether } from '../../src/profiles/profile.js';
 import type { Profile } from '../../src/profiles/schema.js';
 import { answered, FakeGitHub } from '../support/fake-github.js';
 
+const examples = path.join(import.meta.dirname, '../../../../examples');
 const loadProfile = async (file: string): Promise<Profile> => (await resolveProfile(file)).profile;
+const loadTraesProfile = async (): Promise<Profile> =>
+  (await resolveProfilesTogether([path.join(examples, 'base.yaml'), path.join(examples, 'repotted.yaml')])).profile;
 
 const repo = parseRepo('lunch/app');
-const examples = path.join(import.meta.dirname, '../../../../examples');
 const mainBranch = { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } };
 
 function rejection(promise: Promise<unknown>): Promise<unknown> {
@@ -111,7 +113,7 @@ drafts:
 
   test("brings a fresh repository to Trae's profile, after which the plan is empty", async () => {
     const github = new FakeGitHub();
-    const desired = await loadProfile(path.join(examples, 'repotted.yaml'));
+    const desired = await loadTraesProfile();
 
     const plan = await createPlan(github, repo, desired);
     expect(plan.changes.map((change) => `${change.action} ${change.target}`)).toEqual([
@@ -973,7 +975,7 @@ describe('capture', () => {
 
   test('captures a profile that the same repository already matches', async () => {
     const github = new FakeGitHub();
-    await applyPlan(github, await createPlan(github, repo, await loadProfile(path.join(examples, 'repotted.yaml'))));
+    await applyPlan(github, await createPlan(github, repo, await loadTraesProfile()));
     github.state.actions = { enabled: true, allowed_actions: 'selected' };
     github.state.selected = { github_owned_allowed: true, verified_allowed: false, patterns_allowed: [] };
 

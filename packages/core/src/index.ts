@@ -16,7 +16,6 @@ export { parsePlan } from './plan/saved-plan.js';
 export type { Plan } from './plan/plan.js';
 export {
   changeOwnerType,
-  declaredExtends,
   declaredReferences,
   withRewrittenReferences,
   editProfile,
@@ -30,7 +29,6 @@ export {
   settingPath,
   settingValueProblems,
   stringifyProfile,
-  withExtends,
 } from './profiles/profile.js';
 export { readProfileForEditing } from './profiles/editing.js';
 export { rulesetsWithBypassActorIdsSettledBySave } from './profiles/bypass-actors.js';

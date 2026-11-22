@@ -207,7 +207,7 @@ for (const name of ['shared-api', 'shared-web']) {
 await writeFile('/profiles/browser/base.yaml', 'repository:\n  has_wiki: false\n  delete_branch_on_merge: true\n');
 await writeFile(
   '/profiles/browser/teams/website.yaml',
-  'extends: ../base.yaml\n\nrepository:\n  description: Our website\n  homepage: https://example.com\n  has_projects: false\n',
+  'repository:\n  description: Our website\n  homepage: https://example.com\n  has_projects: false\n',
 );
 await writeFile(
   '/profiles/browser/unfinished.yaml',

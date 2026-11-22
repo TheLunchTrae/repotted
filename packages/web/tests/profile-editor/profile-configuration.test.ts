@@ -135,7 +135,7 @@ test('duplicate and unnamed entries can be renamed through their forms', async (
 test.each([
   'repository: wrong\n',
   'actions: { selected_actions: wrong }\n',
-  'extends: missing.yaml\n',
+  'extends: base.yaml\nrepository: { has_wiki: false }\n',
   'owner_type: invalid\n',
 ])('invalid areas can be removed in the editor: %s', async (text) => {
   const editor = await opened(text);
@@ -210,22 +210,6 @@ test.each([true, false])(
     expect((await resolveProfile(file)).profile.labels).toEqual([{ name: 'keep', color: 'abcdef' }]);
   },
 );
-
-test.each([
-  ['pages: { absent: true }\n', 'pages: { build_type: workflow }\n', 'pages.build_type', 'workflow'],
-  ['pages: { build_type: workflow }\n', 'pages: { absent: true }\n', 'pages.absent', true],
-])('invalid configuration keeps Pages inheritance semantics: %s', async (base, own, path, expected) => {
-  await mkdir('/profiles', { recursive: true });
-  await writeFile('/profiles/base.yaml', base);
-  const editor = await opened(`extends: base.yaml\n${own}repository: { has_wiki: broken }\n`);
-  expect(setting(editor, path).value).toBe(expected);
-  if (path === 'pages.build_type') {
-    expect(setting(editor, 'pages.absent').value).toBeUndefined();
-  }
-  await editor.set(setting(editor, 'repository.has_wiki').field, true);
-  await editor.save(write);
-  expect(editor.saveError.value).toBeUndefined();
-});
 
 test.each([
   ['labels: [42, { name: keep, color: abcdef }]\n', 'labels: [{ name: keep, color: abcdef }, 42]\n'],

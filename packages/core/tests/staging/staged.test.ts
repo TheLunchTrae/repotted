@@ -658,24 +658,6 @@ describe('staged apply from several profiles', () => {
     expect(staged.warnings).toEqual([]);
   });
 
-  test('applies a profile that more than one of them extends once, at its first place', async () => {
-    const { profiles, staged: file } = await freshFolderWithProfiles({
-      shared: 'repository: { has_wiki: true, has_projects: false }\n',
-      node: 'extends: shared.yaml\nrepository: { has_wiki: false }\n',
-      docs: 'extends: shared.yaml\nrepository: { has_projects: true }\n',
-    });
-    const shared = only(profiles, 'shared');
-    const node = only(profiles, 'node');
-    const docs = only(profiles, 'docs');
-
-    const staged = await createStagedApply(file, 'lunch/app', [node, docs]);
-
-    // Were shared applied again with docs, it would set has_wiki back to true over node.
-    expect(staged.chain).toEqual([file, docs, node, shared]);
-    expect(staged.profile.repository).toEqual({ has_wiki: false, has_projects: true });
-    expect(staged.sources['repository']).toEqual({ has_wiki: node, has_projects: docs });
-  });
-
   test('refuses a profile given twice, under any spelling or through a link, and writes no file', async () => {
     const {
       folder,
@@ -705,26 +687,6 @@ describe('staged apply from several profiles', () => {
     expect(String(error)).toContain('more than once in extends');
   });
 
-  test('refuses a profile listed after one that already builds on it', async () => {
-    const { profiles, staged: file } = await freshFolderWithProfiles({
-      shared: 'repository: { has_wiki: true }\n',
-      node: 'extends: shared.yaml\nrepository: { has_wiki: false }\n',
-    });
-    const shared = only(profiles, 'shared');
-    const node = only(profiles, 'node');
-
-    const error = await rejection(createStagedApply(file, 'lunch/app', [node, shared]));
-
-    expect(error).toBeInstanceOf(ProfileError);
-    expect(String(error)).toContain(
-      `${shared} is already applied through ${node}, so listing it after that changes nothing`,
-    );
-    expect(await rejection(readFile(file))).toBeInstanceOf(Error);
-    // Listed first, the shared profile is the starting point the other builds on.
-    const staged = await createStagedApply(file, 'lunch/app', [shared, node]);
-    expect(staged.profile.repository).toEqual({ has_wiki: false });
-  });
-
   test('refuses profiles for different owner types', async () => {
     const { profiles, staged: file } = await freshFolderWithProfiles({
       personal: 'owner_type: user\nrepository: { has_wiki: false }\n',
@@ -740,11 +702,11 @@ describe('staged apply from several profiles', () => {
     expect(await rejection(readFile(file))).toBeInstanceOf(Error);
   });
 
-  test('says a listed profile builds on one for another owner type, rather than that it is applied with it', async () => {
+  test('says a listed profile builds on a definition for another owner type, rather than that it is applied with it', async () => {
     const { profiles, staged: file } = await freshFolderWithProfiles({
       plain: 'repository: { has_wiki: false }\n',
-      team: 'owner_type: organization\nrepository: { has_issues: false }\n',
-      personal: 'owner_type: user\nextends: team.yaml\nrepository: { has_projects: false }\n',
+      team: 'kind: ruleset\nowner_type: organization\nrulesets: [{ name: Main }]\n',
+      personal: 'owner_type: user\nreferences: { rulesets: [team.yaml] }\nrepository: { has_projects: false }\n',
     });
 
     const error = await rejection(
@@ -754,11 +716,10 @@ describe('staged apply from several profiles', () => {
     expect(String(error)).toContain(`but it builds on ${only(profiles, 'team')}`);
   });
 
-  test('warns when a later profile removes what an earlier one adds, but not when a profile drops what it extends', async () => {
+  test('warns when a later profile removes what an earlier one adds', async () => {
     const { profiles, staged: file } = await freshFolderWithProfiles({
       protected: `${mainRuleset}pages: { build_type: workflow }\n`,
       loose: 'rulesets: [{ name: Main, absent: true }]\npages: { absent: true }\n',
-      child: 'extends: protected.yaml\nrulesets: [{ name: Main, absent: true }]\n',
     });
 
     const layered = await createStagedApply(file, 'lunch/app', [only(profiles, 'protected'), only(profiles, 'loose')]);
@@ -770,22 +731,6 @@ describe('staged apply from several profiles', () => {
     const { plan } = await planStagedApply(new FakeGitHub(), file);
     expect(plan.warnings).toContainEqual({ section: 'rulesets', key: 'Main', message: warning });
     expect(plan.warnings).toContainEqual({ section: 'pages', message: pagesWarning });
-
-    await discardStagedApply(file);
-    const extended = await createStagedApply(file, 'lunch/app', [only(profiles, 'child')]);
-    expect(extended.warnings).toEqual([]);
-  });
-
-  test('says nothing when a listed profile drops what its own base adds, though an earlier one shares that base', async () => {
-    const { profiles, staged: file } = await freshFolderWithProfiles({
-      shared: mainRuleset,
-      first: 'extends: shared.yaml\nrepository: { has_wiki: false }\n',
-      second: 'extends: shared.yaml\nrulesets: [{ name: Main, absent: true }]\n',
-    });
-
-    const staged = await createStagedApply(file, 'lunch/app', [only(profiles, 'first'), only(profiles, 'second')]);
-
-    expect(staged.warnings).toEqual([]);
   });
 
   test('reads a staged apply whose extends lists its profiles by hand', async () => {

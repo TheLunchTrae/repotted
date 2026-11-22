@@ -27,20 +27,27 @@ async function names(folder: string): Promise<string[]> {
   return (await readdir(folder, { withFileTypes: true })).map((entry) => entry.name).sort();
 }
 
-test('resolves, lists and edits profiles that extend one another across folders', async () => {
+test('resolves, lists and edits profiles that reference a definition across folders', async () => {
   await mkdir('/profiles/teams', { recursive: true });
-  await writeFile('/profiles/base.yaml', 'repository: { has_wiki: false }\nmerge: { allow_squash_merge: true }\n');
-  await writeFile('/profiles/teams/web.yaml', '# Web team\nextends: ../base.yaml\nrepository: { has_wiki: true }\n');
+  await writeFile('/profiles/main.yaml', 'kind: ruleset\nrulesets: [{ name: Main, enforcement: active }]\n');
+  await writeFile(
+    '/profiles/teams/web.yaml',
+    '# Web team\nreferences: { rulesets: [../main.yaml] }\nrepository: { has_wiki: true }\n',
+  );
 
   const listed = await listProfiles('/profiles');
-  expect(listed.map((profile) => profile.file)).toEqual(['/profiles/base.yaml', '/profiles/teams/web.yaml']);
+  expect(listed.map((profile) => profile.file)).toEqual(['/profiles/main.yaml', '/profiles/teams/web.yaml']);
 
   const edited = await editProfile('/profiles/teams/web.yaml', [
     { path: ['merge', 'allow_squash_merge'], value: false },
   ]);
 
-  expect(edited.profile).toMatchObject({ repository: { has_wiki: true }, merge: { allow_squash_merge: false } });
-  expect(edited.chain).toEqual(['/profiles/teams/web.yaml', '/profiles/base.yaml']);
+  expect(edited.profile).toMatchObject({
+    repository: { has_wiki: true },
+    merge: { allow_squash_merge: false },
+    rulesets: [{ name: 'Main', enforcement: 'active' }],
+  });
+  expect(edited.chain).toEqual(['/profiles/teams/web.yaml', '/profiles/main.yaml']);
   expect(await readFile('/profiles/teams/web.yaml', 'utf8')).toContain('# Web team');
   // The edit replaces the file through a temporary one beside it, which must not stay.
   expect(await names('/profiles/teams')).toEqual(['web.yaml']);

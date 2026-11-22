@@ -17,7 +17,7 @@ const choices: readonly { readonly type: OwnerChoice; readonly label: string; re
   {
     type: 'any',
     label: 'Any owner',
-    help: "For a base profile that both kinds extend. GitHub skips what a repository's owner doesn't have.",
+    help: "For a profile that both kinds use. GitHub skips what a repository's owner doesn't have.",
   },
 ];
 
@@ -70,9 +70,7 @@ export function OwnerTypeDialog({ editor, profiles, onClose }: OwnerTypeProps): 
         }}
       >
         <h2 id="owner-heading">Who the profile is for</h2>
-        {from !== undefined && (
-          <p class="notice">{from} sets the type for every profile that extends it, so it is changed there.</p>
-        )}
+        {from !== undefined && <p class="notice">{from} sets the type, so it is changed there.</p>}
         <fieldset class="choices" disabled={from !== undefined}>
           <legend class="visually-hidden">Owner type</legend>
           {choices.map(({ type, label: name, help }) => (

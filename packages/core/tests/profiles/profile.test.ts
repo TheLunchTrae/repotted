@@ -4,14 +4,13 @@ import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
 
 import {
-  declaredExtends,
   editProfile,
   listProfiles,
   parseProfile,
   ProfileError,
   resolveProfile,
+  resolveProfilesTogether,
   stringifyProfile,
-  withExtends,
 } from '../../src/profiles/profile.js';
 import {
   commitPairs,
@@ -39,6 +38,10 @@ async function loadProfile(file: string): Promise<Profile> {
   return (await resolveProfile(file)).profile;
 }
 
+async function loadTogether(...files: string[]): Promise<Profile> {
+  return (await resolveProfilesTogether(files)).profile;
+}
+
 function rejection(promise: Promise<unknown>): Promise<unknown> {
   return promise.then(
     () => undefined,
@@ -48,38 +51,31 @@ function rejection(promise: Promise<unknown>): Promise<unknown> {
 
 describe('the profile that applies', () => {
   test.each(['code_scanning_default_setup', 'code_quality_setup'] as const)(
-    'checks the Actions requirement for %s after inheritance and leaves drafts out',
+    'checks the Actions requirement for %s on profiles applied together and leaves drafts out',
     async (setup) => {
       const base = await write(`${setup}-base.yaml`, 'actions: { enabled: false }\n');
-      const file = await write(
-        `${setup}-override.yaml`,
-        `extends: ${path.basename(base)}\nsecurity: { ${setup}: { state: configured } }\n`,
-      );
+      const file = await write(`${setup}-override.yaml`, `security: { ${setup}: { state: configured } }\n`);
+      const enables = await write(`${setup}-enables.yaml`, 'actions: { enabled: true }\n');
 
-      await expect(resolveProfile(file)).rejects.toThrow('Enable Actions');
+      await expect(resolveProfilesTogether([base, file])).rejects.toThrow('Enable Actions');
+      await expect(loadTogether(base, file, enables)).resolves.toMatchObject({ actions: { enabled: true } });
       await expect(
         parseProfile(`actions: { enabled: false }\nsecurity: { ${setup}: { state: configured } }`, directory),
       ).rejects.toThrow(`security.${setup}.state`);
-      await expect(
-        parseProfile(`extends: ${path.basename(file)}\nactions: { enabled: true }`, directory),
-      ).resolves.toMatchObject({ profile: { actions: { enabled: true } } });
-      await expect(
-        parseProfile(`extends: ${path.basename(file)}\nsecurity: { ${setup}: { state: not-configured } }`, directory),
-      ).resolves.toMatchObject({ profile: { security: { [setup]: { state: 'not-configured' } } } });
       await expect(parseProfile(`security: { ${setup}: { state: configured } }`, directory)).resolves.toMatchObject({
         profile: { security: { [setup]: { state: 'configured' } } },
       });
       await expect(
         parseProfile(
-          `extends: ${path.basename(base)}\ndrafts: { security: { ${setup}: { state: configured } } }`,
+          `actions: { enabled: false }\ndrafts: { security: { ${setup}: { state: configured } } }`,
           directory,
         ),
       ).resolves.toMatchObject({ drafts: { security: { [setup]: { state: 'configured' } } } });
     },
   );
 
-  test('lays a repository profile over the profile it extends', async () => {
-    await write(
+  test('lays a later profile over an earlier one applied with it', async () => {
+    const base = await write(
       'base.yaml',
       `
 repository: { has_wiki: false, delete_branch_on_merge: true }
@@ -96,7 +92,6 @@ rulesets:
     const file = await write(
       'app.yaml',
       `
-extends: base.yaml
 repository: { has_wiki: true }
 actions: { selected_actions: { patterns_allowed: ['oven-sh/*'] } }
 rulesets:
@@ -108,7 +103,7 @@ rulesets:
 `,
     );
 
-    const profile = await loadProfile(file);
+    const profile = await loadTogether(base, file);
 
     expect(profile.repository).toEqual({ has_wiki: true, delete_branch_on_merge: true });
     expect(profile.actions).toEqual({
@@ -121,17 +116,21 @@ rulesets:
       '-Drop',
       'Add',
     ]);
-    // A ruleset in the override replaces the base one whole; its rules do not carry over.
+    // A ruleset in the later profile replaces the earlier one whole; its rules do not carry over.
     expect(profile.rulesets?.[1]).toEqual({ name: 'Replace', enforcement: 'evaluate' });
   });
 
-  test('rejects a profile that extends itself', async () => {
-    await write('loop-a.yaml', 'extends: loop-b.yaml\n');
-    const file = await write('loop-b.yaml', 'extends: loop-a.yaml\n');
+  test('refuses a profile that names another to extend, rather than applying it without that one', async () => {
+    await write('extended.yaml', 'merge: { allow_rebase_merge: true }\n');
+    const file = await write('extending.yaml', 'extends: extended.yaml\nrepository: { has_wiki: false }\n');
 
     const error = await rejection(loadProfile(file));
     expect(error).toBeInstanceOf(ProfileError);
-    expect(String(error)).toContain('extends itself');
+    expect(error).toMatchObject({ problems: [{ file, path: ['extends'] }] });
+    expect(String(error)).toContain('A profile cannot extend another');
+    await expect(parseProfile('extends: extended.yaml\n', directory)).rejects.toThrow(
+      'A profile cannot extend another',
+    );
   });
 
   test('ignores unknown keys without managing their values', async () => {
@@ -171,34 +170,15 @@ rulesets:
       override: '[{ name: bug, color: d73a4a }, { name: BUG, absent: true }]',
       duplicate: 'Label "BUG"',
     },
-  ])('rejects duplicate $section in an override before merging', async ({ section, base, override, duplicate }) => {
-    const baseName = `${section}-duplicate-base.yaml`;
-    await write(baseName, `${section}: ${base}\n`);
-    const file = await write(`${section}-duplicate-own.yaml`, `extends: ${baseName}\n${section}: ${override}\n`);
+  ])('rejects duplicate $section in a later profile before merging', async ({ section, base, override, duplicate }) => {
+    const earlier = await write(`${section}-duplicate-base.yaml`, `${section}: ${base}\n`);
+    const file = await write(`${section}-duplicate-own.yaml`, `${section}: ${override}\n`);
 
-    const error = await rejection(loadProfile(file));
+    const error = await rejection(loadTogether(earlier, file));
 
     expect(error).toBeInstanceOf(ProfileError);
     expect(String(error)).toContain(`${file} is not a valid profile:`);
     expect(String(error)).toContain(`${duplicate} appears more than once`);
-  });
-
-  test('names the file with duplicate entries when another profile extends it', async () => {
-    await write('duplicate-root.yaml', 'rulesets: [{ name: Main }]\n');
-    const invalid = await write(
-      'duplicate-middle.yaml',
-      'extends: duplicate-root.yaml\nrulesets: [{ name: Main, target: tag }, { name: Main, target: push }]\n',
-    );
-    const file = await write(
-      'duplicate-leaf.yaml',
-      'extends: duplicate-middle.yaml\nrulesets: [{ name: Main, target: branch }]\n',
-    );
-
-    const error = await rejection(loadProfile(file));
-
-    expect(error).toBeInstanceOf(ProfileError);
-    expect(String(error)).toContain(`${invalid} is not a valid profile:`);
-    expect(String(error)).toContain('Ruleset "Main" appears more than once');
   });
 
   test('rejects deployment patterns without custom branch policies', async () => {
@@ -225,14 +205,11 @@ rulesets:
     expect(String(await rejection(loadProfile(file)))).toContain('Pattern "branch main" appears more than once');
   });
 
-  test('replaces a base environment whose name differs only in case', async () => {
-    await write('environment-base.yaml', 'environments: [{ name: npm, wait_timer: 5 }]\n');
-    const file = await write(
-      'environment-override.yaml',
-      'extends: environment-base.yaml\nenvironments: [{ name: NPM, wait_timer: 10 }]\n',
-    );
+  test('replaces an earlier environment whose name differs only in case', async () => {
+    const earlier = await write('environment-base.yaml', 'environments: [{ name: npm, wait_timer: 5 }]\n');
+    const file = await write('environment-override.yaml', 'environments: [{ name: NPM, wait_timer: 10 }]\n');
 
-    expect((await loadProfile(file)).environments).toEqual([{ name: 'NPM', wait_timer: 10 }]);
+    expect((await loadTogether(earlier, file)).environments).toEqual([{ name: 'NPM', wait_timer: 10 }]);
   });
 
   test('names the field that fails in a ruleset, environment, autolink or Pages entry', async () => {
@@ -339,7 +316,7 @@ rulesets:
 
   test('loads the example profiles', async () => {
     const examples = path.join(import.meta.dirname, '../../../../examples');
-    const profile = await loadProfile(path.join(examples, 'repotted.yaml'));
+    const profile = await loadTogether(path.join(examples, 'base.yaml'), path.join(examples, 'repotted.yaml'));
 
     expect(profile.merge).toEqual({ allow_merge_commit: false, allow_squash_merge: false, allow_rebase_merge: true });
     expect(profile.rulesets?.map((entry) => entry.name)).toContain('Main: Require Status Checks');
@@ -347,29 +324,30 @@ rulesets:
 });
 
 describe('parseProfile', () => {
-  test('resolves extends from the given directory and round-trips through YAML', async () => {
-    await write('shared.yaml', 'merge: { allow_rebase_merge: true }\n');
-
-    const { profile } = await parseProfile('extends: shared.yaml\nmerge: { allow_squash_merge: false }\n', directory);
+  test('round-trips through YAML', async () => {
+    const { profile } = await parseProfile(
+      'merge: { allow_rebase_merge: true, allow_squash_merge: false }\n',
+      directory,
+    );
 
     expect(profile).toEqual({ merge: { allow_rebase_merge: true, allow_squash_merge: false } });
     expect((await parseProfile(stringifyProfile(profile), directory)).profile).toEqual(profile);
   });
+});
 
-  test('validates the merged profile, so a base may need the profile that extends it', async () => {
-    await write(
+describe('resolveProfilesTogether', () => {
+  test('validates the merged profile, so an earlier profile may need what a later one adds', async () => {
+    const allOff = await write(
       'all-off.yaml',
       'merge: { allow_merge_commit: false, allow_squash_merge: false, allow_rebase_merge: false }\n',
     );
+    const rebase = await write('rebase-on.yaml', 'merge: { allow_rebase_merge: true }\n');
 
-    const { profile } = await parseProfile('extends: all-off.yaml\nmerge: { allow_rebase_merge: true }\n', directory);
-
-    expect(profile.merge?.allow_rebase_merge).toBe(true);
+    await expect(resolveProfile(allOff)).rejects.toThrow(ProfileError);
+    expect((await loadTogether(allOff, rebase)).merge?.allow_rebase_merge).toBe(true);
   });
-});
 
-describe('resolveProfile', () => {
-  test('names the file that sets each value, so the app can tell own values from inherited ones', async () => {
+  test('names the file that sets each value, so the app can tell own values from earlier ones', async () => {
     const folder = path.join(directory, 'sources');
     await mkdir(folder);
     const base = path.join(folder, 'base.yaml');
@@ -386,7 +364,6 @@ environments: [{ name: npm }]
     await writeFile(
       own,
       `
-extends: base.yaml
 repository: { has_wiki: true }
 actions: { selected_actions: { github_owned_allowed: true } }
 rulesets: [{ name: Replace, enforcement: evaluate }]
@@ -394,7 +371,7 @@ environments: [{ name: NPM, wait_timer: 5 }]
 `,
     );
 
-    const resolved = await resolveProfile(own);
+    const resolved = await resolveProfilesTogether([base, own]);
 
     expect(resolved.chain).toEqual([own, base]);
     expect(resolved.sources).toEqual({
@@ -433,10 +410,9 @@ environments: [{ name: NPM, wait_timer: 5 }]
 
 describe('editProfile', () => {
   test('changes settings and keeps the rest of the file, comments included', async () => {
-    await write('edit-base.yaml', 'repository: { has_projects: false }\n');
     const file = await write(
       'edit.yaml',
-      '# Shared with the team\nextends: edit-base.yaml\nrepository: { has_wiki: false } # wiki lives elsewhere\nmerge:\n  allow_rebase_merge: true\n',
+      '# Shared with the team\nrepository: { has_wiki: false } # wiki lives elsewhere\nmerge:\n  allow_rebase_merge: true\n',
     );
 
     const resolved = await editProfile(file, [
@@ -446,9 +422,9 @@ describe('editProfile', () => {
     ]);
 
     expect(await readFile(file, 'utf8')).toBe(
-      '# Shared with the team\nextends: edit-base.yaml\nrepository: { has_wiki: false, has_issues: true } # wiki lives elsewhere\nactions:\n  selected_actions:\n    verified_allowed: false\n',
+      '# Shared with the team\nrepository: { has_wiki: false, has_issues: true } # wiki lives elsewhere\nactions:\n  selected_actions:\n    verified_allowed: false\n',
     );
-    expect(resolved.profile.repository).toEqual({ has_projects: false, has_wiki: false, has_issues: true });
+    expect(resolved.profile.repository).toEqual({ has_wiki: false, has_issues: true });
     expect(resolved.sources.repository['has_issues']).toBe(file);
   });
 
@@ -582,11 +558,9 @@ describe('editProfile', () => {
   });
 
   test('writes, replaces and drops rulesets and environments by name, and keeps the rest and its comments', async () => {
-    await write('entries-base.yaml', 'environments: [{ name: Production, wait_timer: 5 }]\n');
     const file = await write(
       'entries.yaml',
       [
-        'extends: entries-base.yaml',
         'rulesets:',
         '  # Kept as it is',
         '  - name: First',
@@ -611,7 +585,6 @@ describe('editProfile', () => {
 
     expect(await readFile(file, 'utf8')).toBe(
       [
-        'extends: entries-base.yaml',
         'rulesets:',
         '  # Kept as it is',
         '  - name: First',
@@ -631,10 +604,10 @@ describe('editProfile', () => {
     expect(resolved.profile.environments).toEqual([{ name: 'production', wait_timer: 10 }]);
     expect(resolved.sources.environments['production']).toBe(file);
 
-    // Dropping the file's own entry lets the base's apply again, and an empty list goes.
+    // Dropping the last entry takes the empty list out too.
     const dropped = await editProfile(file, [{ list: 'environments', name: 'PRODUCTION', entry: undefined }]);
     expect(await readFile(file, 'utf8')).not.toContain('environments');
-    expect(dropped.profile.environments).toEqual([{ name: 'Production', wait_timer: 5 }]);
+    expect(dropped.profile.environments).toBeUndefined();
   });
 
   test('writes the first entry of a list written as empty as a block, not on one line', async () => {
@@ -756,20 +729,20 @@ describe('editProfile', () => {
 });
 
 describe('listProfiles', () => {
-  test('lists the YAML files in a folder by name, with what each extends and why one cannot be used', async () => {
+  test('lists the YAML files in a folder by name, with why one cannot be used', async () => {
     const folder = path.join(directory, 'listing');
     await mkdir(folder);
     await writeFile(path.join(folder, 'base.yaml'), 'repository: { has_wiki: false }\n');
-    await writeFile(path.join(folder, 'app.yml'), 'extends: base.yaml\n');
+    await writeFile(path.join(folder, 'app.yml'), 'merge: { allow_rebase_merge: true }\n');
     await writeFile(path.join(folder, 'broken.yaml'), 'repository: { has_wiki: broken }\n');
     await writeFile(path.join(folder, 'notes.md'), '# not a profile\n');
 
     const listings = await listProfiles(folder);
 
-    expect(listings.map(({ name, folder: sub, extends: base }) => [name, sub, base])).toEqual([
-      ['app', '', path.join(folder, 'base.yaml')],
-      ['base', '', null],
-      ['broken', '', null],
+    expect(listings.map(({ name, folder: sub }) => [name, sub])).toEqual([
+      ['app', ''],
+      ['base', ''],
+      ['broken', ''],
     ]);
     expect(listings.map((listing) => listing.problem === null)).toEqual([true, true, false]);
     expect(listings[2]?.problem).toContain('has_wiki');
@@ -780,17 +753,17 @@ describe('listProfiles', () => {
     await mkdir(path.join(folder, 'team', 'apps'), { recursive: true });
     await mkdir(path.join(folder, '.git'));
     await writeFile(path.join(folder, 'base.yaml'), 'repository: { has_wiki: false }\n');
-    await writeFile(path.join(folder, 'team', 'oss.yaml'), 'extends: ../base.yaml\n');
-    await writeFile(path.join(folder, 'team', 'apps', 'web.yaml'), 'extends: ../oss.yaml\n');
+    await writeFile(path.join(folder, 'team', 'oss.yaml'), 'merge: { allow_rebase_merge: true }\n');
+    await writeFile(path.join(folder, 'team', 'apps', 'web.yaml'), 'labels: [{ name: bug }]\n');
     await writeFile(path.join(folder, '.git', 'hidden.yaml'), '');
     await symlink(path.join(folder, 'team'), path.join(folder, 'linked'));
 
     const listings = await listProfiles(folder);
 
-    expect(listings.map(({ folder: sub, name, extends: base }) => [sub, name, base])).toEqual([
-      ['', 'base', null],
-      ['team', 'oss', path.join(folder, 'base.yaml')],
-      ['team/apps', 'web', path.join(folder, 'team', 'oss.yaml')],
+    expect(listings.map(({ folder: sub, name }) => [sub, name])).toEqual([
+      ['', 'base'],
+      ['team', 'oss'],
+      ['team/apps', 'web'],
     ]);
     expect(listings.every((listing) => listing.problem === null)).toBe(true);
   });
@@ -798,15 +771,13 @@ describe('listProfiles', () => {
   test('reports real paths, matching the chain that resolveProfile reports for the same file', async () => {
     const folder = path.join(directory, 'real-paths');
     await mkdir(folder);
-    await writeFile(path.join(folder, 'base.yaml'), 'repository: { has_wiki: false }\n');
-    await writeFile(path.join(folder, 'app.yml'), 'extends: base.yaml\n');
+    await writeFile(path.join(folder, 'app.yml'), 'repository: { has_wiki: false }\n');
     const linked = path.join(directory, 'real-paths-link');
     await symlink(folder, linked);
 
     const [app] = await listProfiles(linked);
 
     expect(app?.file).toBe(path.join(folder, 'app.yml'));
-    expect(app?.extends).toBe(path.join(folder, 'base.yaml'));
     expect((await resolveProfile(path.join(linked, 'app.yml'))).chain[0]).toBe(app?.file);
   });
 });
@@ -912,17 +883,17 @@ drafts:
     expect(String(await rejection(resolveProfile(file)))).toContain('Draft autolink "A-" appears more than once');
   });
 
-  test('never replace an entry or setting of a base profile', async () => {
+  test('never replace an entry or setting of an earlier profile applied with them', async () => {
     const base = await write(
       'draft-base.yaml',
       'repository: { has_wiki: false }\nrulesets: [{ name: Main, enforcement: active }]\n',
     );
     const own = await write(
       'draft-own.yaml',
-      'extends: draft-base.yaml\nrulesets: [{ name: Main, draft: true, enforcement: evaluate }]\ndrafts: { repository: { has_wiki: true } }\n',
+      'rulesets: [{ name: Main, draft: true, enforcement: evaluate }]\ndrafts: { repository: { has_wiki: true } }\n',
     );
 
-    const resolved = await resolveProfile(own);
+    const resolved = await resolveProfilesTogether([base, own]);
 
     expect(resolved.profile).toEqual({
       repository: { has_wiki: false },
@@ -932,7 +903,7 @@ drafts:
     expect(resolved.sources.drafts['rulesets']).toEqual({ Main: own });
   });
 
-  test('merge with the drafts of a base profile, as settings and entries merge', async () => {
+  test('merge with the drafts of an earlier profile, as settings and entries merge', async () => {
     const base = await write(
       'drafts-merge-base.yaml',
       `
@@ -947,7 +918,6 @@ drafts:
     const own = await write(
       'drafts-merge-own.yaml',
       `
-extends: drafts-merge-base.yaml
 autolinks: [{ key_prefix: JIRA-, draft: true, url_template: "https://new/<num>" }]
 rulesets: [{ name: Main, draft: true, target: branch }]
 environments: [{ name: NPM, draft: true, wait_timer: 2 }]
@@ -957,7 +927,7 @@ drafts:
 `,
     );
 
-    const resolved = await resolveProfile(own);
+    const resolved = await resolveProfilesTogether([base, own]);
 
     expect(resolved.profile).toEqual({});
     expect(resolved.drafts).toEqual({
@@ -983,16 +953,16 @@ drafts:
     expect(resolved.sources.drafts.environments).toEqual({ NPM: own });
   });
 
-  test('replace a base draft group whole with a value that is not one, and the reverse', async () => {
+  test('replace an earlier draft group whole with a value that is not one, and the reverse', async () => {
     const base = await write(
       'drafts-group-base.yaml',
       'drafts:\n  actions: { selected_actions: { github_owned_allowed: true } }\n  pages: { source: oops }\n',
     );
     const own = await write(
       'drafts-group-own.yaml',
-      'extends: drafts-group-base.yaml\ndrafts:\n  actions: { selected_actions: oops }\n  pages: { source: { branch: main } }\n',
+      'drafts:\n  actions: { selected_actions: oops }\n  pages: { source: { branch: main } }\n',
     );
-    const resolved = await resolveProfile(own);
+    const resolved = await resolveProfilesTogether([base, own]);
     expect(resolved.drafts.actions).toEqual({ selected_actions: 'oops' });
     expect(resolved.drafts.pages).toEqual({ source: { branch: 'main' } });
     expect(resolved.sources.drafts.actions).toEqual({ selected_actions: own });
@@ -1000,13 +970,16 @@ drafts:
     expect(base).not.toBe(own);
   });
 
-  test('replace a base draft value that is not a group with a group that sets nothing', async () => {
-    await write('drafts-empty-group-base.yaml', 'drafts:\n  security: { code_scanning_default_setup: oops }\n');
+  test('replace an earlier draft value that is not a group with a group that sets nothing', async () => {
+    const base = await write(
+      'drafts-empty-group-base.yaml',
+      'drafts:\n  security: { code_scanning_default_setup: oops }\n',
+    );
     const own = await write(
       'drafts-empty-group-own.yaml',
-      'extends: drafts-empty-group-base.yaml\ndrafts:\n  security: { code_scanning_default_setup: {} }\n',
+      'drafts:\n  security: { code_scanning_default_setup: {} }\n',
     );
-    const resolved = await resolveProfile(own);
+    const resolved = await resolveProfilesTogether([base, own]);
     expect(resolved.drafts.security).toBeUndefined();
     expect(resolved.sources.drafts.security).toEqual({});
   });
@@ -1055,13 +1028,15 @@ drafts:
     expect((await resolveProfile(only)).profile).toEqual({});
   });
 
-  test('refuse two drafts of the same name in an override, though a base has that name', async () => {
-    await write('drafts-dup-base.yaml', 'rulesets: [{ name: Main, draft: true }]\n');
+  test('refuse two drafts of the same name in a later profile, though an earlier one has that name', async () => {
+    const base = await write('drafts-dup-base.yaml', 'rulesets: [{ name: Main, draft: true }]\n');
     const own = await write(
       'drafts-dup-own.yaml',
-      'extends: drafts-dup-base.yaml\nrulesets: [{ name: Main, draft: true }, { name: Main, draft: true }]\n',
+      'rulesets: [{ name: Main, draft: true }, { name: Main, draft: true }]\n',
     );
-    expect(String(await rejection(resolveProfile(own)))).toContain('Draft ruleset "Main" appears more than once');
+    expect(String(await rejection(resolveProfilesTogether([base, own])))).toContain(
+      'Draft ruleset "Main" appears more than once',
+    );
   });
 
   test('may share a name with an entry in the same file, but not with another draft', async () => {
@@ -1223,14 +1198,11 @@ describe('editProfile with drafts', () => {
     }
   });
 
-  test('warns when drafts.unset names what its own file does not set, as a base value', async () => {
-    await write('unset-base.yaml', 'repository: { has_wiki: false }\n');
-    const file = await write(
-      'unset-override.yaml',
-      'extends: unset-base.yaml\ndrafts: { unset: [repository.has_wiki] }\n',
-    );
+  test('warns when drafts.unset names what its own file does not set, though an earlier profile sets it', async () => {
+    const base = await write('unset-base.yaml', 'repository: { has_wiki: false }\n');
+    const file = await write('unset-override.yaml', 'drafts: { unset: [repository.has_wiki] }\n');
 
-    const resolved = await resolveProfile(file);
+    const resolved = await resolveProfilesTogether([base, file]);
     expect(resolved.warnings).toEqual([
       'Draft unset repository.has_wiki in unset-override.yaml: the file does not set it, so finishing the draft changes nothing',
     ]);
@@ -1246,24 +1218,6 @@ describe('editProfile with drafts', () => {
       expect(String(await rejection(editProfile(file, [{ path: key, value: true }])))).toContain('Cannot edit');
     }
   });
-});
-
-test('a move points extends at the new place and keeps the rest of the file as written', () => {
-  const text =
-    '# Shared by the web team\r\nextends: ../base.yaml # the org default\r\nmerge:\r\n    allow_squash_merge: true\r\n';
-
-  expect(declaredExtends(text)).toBe('../base.yaml');
-  expect(withExtends(text, 'shared/base.yaml')).toBe(
-    '# Shared by the web team\r\nextends: shared/base.yaml # the org default\r\nmerge:\r\n    allow_squash_merge: true\r\n',
-  );
-  expect(withExtends('extends: "../base.yaml"\nlabels:\n- name: bug\n', 'the base.yaml')).toBe(
-    'extends: "the base.yaml"\nlabels:\n- name: bug\n',
-  );
-  expect(withExtends('extends: >-\n  base.yaml\nmerge: {}\n', '../shared/base.yaml')).toBe(
-    'extends: >-\n  ../shared/base.yaml\nmerge: {}\n',
-  );
-  expect(declaredExtends('merge: [unclosed\n')).toBeUndefined();
-  expect(declaredExtends('extends: 3\n')).toBeUndefined();
 });
 
 test('keeps known draft values with invalid objects for validation instead of rejecting their inner keys', async () => {

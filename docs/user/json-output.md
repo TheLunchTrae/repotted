@@ -87,8 +87,8 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   `apply_failed` or `failed`.
 - `profile` prints
   `{ chain, profile, drafts, warnings, sources, owner_source, owner_changes }`. `chain` is
-  the profile file, then each one it extends, as real paths, with links
-  resolved. `profile` is the resolved profile without its
+  the profile file, then each reusable definition it references, as real
+  paths, with links resolved. `profile` is the resolved profile without its
   [drafts](profiles.md#drafts): what a plan applies. `drafts` holds them, as
   `repository`, `merge`, `actions`, `security`, `custom_properties` and
   `pages` objects of draft settings and `autolinks`, `rulesets`,
@@ -146,15 +146,14 @@ diagnostic and not a failure. `--help` and `--version` still print text.
   `{ repository, file, message }` for each file Repotted can't verify as its
   member's staged apply. Those files stay where they are, and the batch
   ends. A staged apply that joined the batch stays without a warning.
-- `profiles` prints `{ profiles }`, each as `{ name, folder, file, extends, problem, owner_type }`,
+- `profiles` prints `{ profiles }`, each as `{ name, folder, file, problem, owner_type }`,
   for the `.yaml` and `.yml` files in the folder and its subfolders: a folder's
   own profiles by file name, then each subfolder's, by name. Subfolders whose
   names start with a dot, and links to folders, are left out. `folder` is the
   subfolder, with `/` separators, such as `team/apps`, or `""` for the folder itself.
   `file` is a real path, with links resolved, as in `profile`'s `chain`.
-  `extends` is the real path of the profile it extends, or null, and
   `problem` says why the profile cannot be used, or is null. `owner_type` is
-  the chain's owner type, `user` or `organization`, or null for any owner or
+  the profile's owner type, `user` or `organization`, or null for any owner or
   a profile with a problem.
 - `schema` prints the JSON Schema of a profile file, in Draft 7: the same
   document as without `--json`, on one line.

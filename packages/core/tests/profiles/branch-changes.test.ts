@@ -14,7 +14,7 @@ function repository(): FakeGitRepository {
   const github = new FakeGitRepository();
   github.write({
     'profiles/base.yaml': 'merge:\n  allow_squash_merge: true\n',
-    'profiles/old.yaml': 'extends: base.yaml\n',
+    'profiles/old.yaml': 'labels: [{ name: bug }]\n',
     'profiles/gone.yaml': 'labels: []\n',
     'README.md': 'hi\n',
   });
@@ -30,7 +30,7 @@ describe('readBranchChanges', () => {
         'profiles/new.yaml': 'repository:\n  has_wiki: false\n',
         'profiles/gone.yaml': null,
         'profiles/old.yaml': null,
-        'profiles/teams/old.yaml': 'extends: base.yaml\n',
+        'profiles/teams/old.yaml': 'labels: [{ name: bug }]\n',
         'README.md': 'hello\n',
         'profiles/.repotted-preferences.json': '{}\n',
       },
@@ -45,7 +45,7 @@ describe('readBranchChanges', () => {
         status: 'renamed',
         profilePath: 'teams/old.yaml',
         previousProfilePath: 'old.yaml',
-        content: 'extends: base.yaml\n',
+        content: 'labels: [{ name: bug }]\n',
       },
     ]);
     expect(changes.otherChangedFiles).toEqual(['.repotted-preferences.json']);

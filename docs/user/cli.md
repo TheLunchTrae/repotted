@@ -217,12 +217,12 @@ didn't finish; plan the batch again to review what is left.
 
 `npx repotted profiles <folder>` lists the profiles in a folder and its
 subfolders, with each one's owner type, and says why any of them can't be
-used. A profile in a subfolder prints with its folder, such as `team/oss`,
-and so does a profile it extends. Hidden subfolders, such as `.git`, and
+used. A profile in a subfolder prints with its folder, such as `team/oss`.
+Hidden subfolders, such as `.git`, and
 linked ones are left out, as a sync leaves them out.
 
 `npx repotted profile <file>` prints a profile with everything it gets from the
-profiles it extends. With these options, it edits the file instead:
+reusable definitions it references. With these options, it edits the file instead:
 
 - `--set section.key=value` sets one setting of the `repository`, `merge`,
   `actions`, `security`, `custom_properties`, or `pages` section, such as
@@ -231,14 +231,15 @@ profiles it extends. With these options, it edits the file instead:
   `--set custom_properties.team=platform`. A key inside an object of
   settings takes its own path, as `security.code_scanning_default_setup.state`.
   The value is JSON, or a bare word as a string.
-- `--unset section.key` removes a setting from the file, so a base profile's
-  value applies, or else the repository keeps its own.
+- `--unset section.key` removes a setting from the file, so the repository
+  keeps its own.
 - `--ruleset json`, `--environment json` and `--label json` write one
   ruleset, environment or label, given as a JSON object with a `name`. It replaces the file's own entry of
   that name, or goes after the others when the file has none.
 - `--drop-ruleset name`, `--drop-environment name` and `--drop-label name`
   remove the file's own
-  entry, so an entry of that name in a base profile applies again.
+  entry, so an entry of that name in a reusable definition it references
+  applies again.
 - `--set drafts.section.key=value` and `--unset drafts.section.key` set and
   remove a [draft](profiles.md#drafts) setting. A draft value is saved even
   when it wouldn't apply, and its problems print as warnings.
@@ -410,7 +411,7 @@ To add Repotted to an MCP client:
 ```
 
 Add `"--read-only"` after `"mcp"` to leave out the `apply` tool, so the agent
-can read but never change a repository. File paths and `extends`
+can read but never change a repository. File paths and references
 resolve from the folder the server starts in.
 
 If you haven't signed in, the agent's first tool call replies with a code to

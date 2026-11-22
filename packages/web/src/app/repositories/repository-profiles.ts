@@ -111,7 +111,7 @@ async function sha256(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-/** What the profile sets, with what it extends, so an edit to a draft changes nothing. */
+/** What the profile sets, with what it references, so an edit to a draft changes nothing. */
 export async function profileVersion(file: string): Promise<string> {
   return sha256(stringifyProfile((await resolveProfile(file)).profile));
 }

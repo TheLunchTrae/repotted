@@ -7,7 +7,7 @@ import { parse } from 'yaml';
 import { parseRepo } from '../../src/github/client.js';
 import { applyPlan } from '../../src/plan/apply.js';
 import { createPlan } from '../../src/plan/plan.js';
-import { editProfile, resolveProfile } from '../../src/profiles/profile.js';
+import { editProfile, resolveProfile, resolveProfilesTogether } from '../../src/profiles/profile.js';
 import { FakeGitHub } from '../support/fake-github.js';
 
 const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-ruleset-')));
@@ -66,24 +66,26 @@ describe('reusable rulesets', () => {
     expect((await createPlan(github, repo, (await resolveProfile(definition)).profile)).changes).toEqual([]);
   });
 
-  test('uses references after base profiles and inline entries after references without flattening edits', async () => {
-    await write('base.yaml', 'rulesets: [{ name: Main, rules: [{ type: creation }] }]\n');
+  test('uses references after earlier profiles and inline entries after references without flattening edits', async () => {
+    const base = await write('base.yaml', 'rulesets: [{ name: Main, rules: [{ type: creation }] }]\n');
     const shared = await write(
       'shared.yaml',
       'kind: ruleset\nrulesets: [{ name: Main, rules: [{ type: deletion }] }]\n',
     );
-    const consumer = await write('layered.yaml', 'extends: base.yaml\nreferences: { rulesets: [shared.yaml] }\n');
-    expect((await resolveProfile(consumer)).sources.rulesets['Main']).toBe(shared);
-    expect((await resolveProfile(consumer)).profile.rulesets).toEqual([
+    const consumer = await write('layered.yaml', 'references: { rulesets: [shared.yaml] }\n');
+    expect((await resolveProfilesTogether([base, consumer])).sources.rulesets['Main']).toBe(shared);
+    expect((await resolveProfilesTogether([base, consumer])).profile.rulesets).toEqual([
       { name: 'Main', rules: [{ type: 'deletion' }] },
     ]);
     await editProfile(consumer, [{ path: ['repository', 'has_wiki'], value: false }]);
     expect(parse(await readFile(consumer, 'utf8'))).toMatchObject({ references: { rulesets: ['shared.yaml'] } });
     await writeFile(
       consumer,
-      'extends: base.yaml\nreferences: { rulesets: [shared.yaml] }\nrulesets: [{ name: Main, enforcement: disabled }]\n',
+      'references: { rulesets: [shared.yaml] }\nrulesets: [{ name: Main, enforcement: disabled }]\n',
     );
-    expect((await resolveProfile(consumer)).profile.rulesets).toEqual([{ name: 'Main', enforcement: 'disabled' }]);
+    expect((await resolveProfilesTogether([base, consumer])).profile.rulesets).toEqual([
+      { name: 'Main', enforcement: 'disabled' },
+    ]);
   });
 
   test('resolves shared edits for every consumer and retains target identity independently of filename', async () => {

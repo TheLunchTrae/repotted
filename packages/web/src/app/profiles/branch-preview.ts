@@ -34,18 +34,18 @@ export interface PreviewRow {
   readonly key: string;
   readonly before: string;
   readonly after: string;
-  readonly fromExtendedProfile: string | undefined;
+  readonly fromOtherFile: string | undefined;
 }
 
 export interface PreviewSection {
-  /** A section of a profile, or `profile` for what the profile is: its base and its owner type. */
+  /** A section of a profile, or `profile` for what the profile is: its owner type. */
   readonly section: Section | 'profile';
   readonly title: string;
   readonly rows: readonly PreviewRow[];
 }
 
-/** `through-base`: its file is the same, but a profile it extends changes. */
-export type PreviewStatus = 'added' | 'removed' | 'changed' | 'renamed' | 'through-base';
+/** `through-reference`: its file is the same, but a reusable definition it references changes. */
+export type PreviewStatus = 'added' | 'removed' | 'changed' | 'renamed' | 'through-reference';
 
 export interface PreviewedProfile {
   /** On the default branch for a removed profile. */
@@ -215,7 +215,7 @@ interface Side {
 
 /**
  * A problem names files by their path among the profiles, so the same problem
- * reads the same on both sides. A profile that extends a file outside the
+ * reads the same on both sides. A profile that references a file outside the
  * folder doesn't load: a branch could otherwise point one at the browser's
  * other profiles.
  */
@@ -234,7 +234,7 @@ async function readSide(root: string): Promise<Map<string, Side>> {
         if (outside === undefined) {
           resolved = read;
         } else {
-          problem = 'It extends a profile outside the profiles folder.';
+          problem = 'It references a file outside the profiles folder.';
         }
       } catch (error) {
         problem = messageOf(error);
@@ -279,29 +279,19 @@ export function previewSections(
   after: ResolvedProfile | undefined,
   root: { readonly before: string; readonly after: string },
 ): PreviewSection[] {
-  const fromBase = (side: ResolvedProfile | undefined, file: string | undefined, folder: string): string | undefined =>
+  const fromOtherFile = (
+    side: ResolvedProfile | undefined,
+    file: string | undefined,
+    folder: string,
+  ): string | undefined =>
     side === undefined || file === undefined || file === side.chain[0] ? undefined : relative(folder, file);
   const sourceOf = (section: Section, key: string, removed: boolean): string | undefined => {
     const side = removed ? before : after;
     const files: Readonly<Record<string, string>> | undefined = side?.sources[section];
-    return fromBase(side, files?.[key], removed ? root.before : root.after);
+    return fromOtherFile(side, files?.[key], removed ? root.before : root.after);
   };
   const sections: PreviewSection[] = [];
   const profileRows: PreviewRow[] = [];
-  const base = (side: ResolvedProfile | undefined, folder: string): string | undefined =>
-    side?.chain[1] === undefined ? undefined : relative(folder, side.chain[1]);
-  const baseBefore = base(before, root.before);
-  const baseAfter = base(after, root.after);
-  if (baseBefore !== baseAfter) {
-    profileRows.push({
-      kind: kindOf(baseBefore, baseAfter),
-      label: 'Extends',
-      key: 'extends',
-      before: baseBefore ?? 'None',
-      after: baseAfter ?? 'None',
-      fromExtendedProfile: undefined,
-    });
-  }
   const ownerBefore = before?.profile.owner_type;
   const ownerAfter = after?.profile.owner_type;
   if (ownerBefore !== ownerAfter) {
@@ -313,7 +303,7 @@ export function previewSections(
       key: 'owner_type',
       before: owner(ownerBefore),
       after: owner(ownerAfter),
-      fromExtendedProfile: undefined,
+      fromOtherFile: undefined,
     });
   }
   if (profileRows.length > 0) {
@@ -335,7 +325,7 @@ export function previewSections(
           key: change.path,
           before: named(change.from),
           after: named(change.to),
-          fromExtendedProfile: sourceOf(section, key, removed) ?? sourceOf(section, key.split('.')[0] ?? key, removed),
+          fromOtherFile: sourceOf(section, key, removed) ?? sourceOf(section, key.split('.')[0] ?? key, removed),
         });
       }
     } else {
@@ -353,7 +343,7 @@ export function previewSections(
             key: `new ${noun}`,
             before: 'Not set',
             after: 'Added',
-            fromExtendedProfile: sourceOf(list, key, false),
+            fromOtherFile: sourceOf(list, key, false),
           });
         } else if (to === undefined) {
           rows.push({
@@ -362,7 +352,7 @@ export function previewSections(
             key: `${noun} removed`,
             before: 'Set',
             after: 'Removed',
-            fromExtendedProfile: sourceOf(list, key, true),
+            fromOtherFile: sourceOf(list, key, true),
           });
         } else {
           for (const field of [...new Set([...Object.keys(from), ...Object.keys(to)])]) {
@@ -373,7 +363,7 @@ export function previewSections(
                 key: change.path,
                 before: valueInFewWords(change.from, 'Not set'),
                 after: valueInFewWords(change.to, 'Not set'),
-                fromExtendedProfile: sourceOf(list, key, false),
+                fromOtherFile: sourceOf(list, key, false),
               });
             }
           }
@@ -406,8 +396,8 @@ async function compareSides(
     const sections = now.resolved === undefined ? [] : previewSections(was?.resolved, now.resolved, roots);
     const textChanged = was?.text !== now.text;
     const status: PreviewStatus =
-      was === undefined ? 'added' : previous !== undefined ? 'renamed' : textChanged ? 'changed' : 'through-base';
-    if (status === 'through-base' && sections.length === 0 && now.problem === was?.problem) {
+      was === undefined ? 'added' : previous !== undefined ? 'renamed' : textChanged ? 'changed' : 'through-reference';
+    if (status === 'through-reference' && sections.length === 0 && now.problem === was?.problem) {
       unchangedProfileCount += 1;
       continue;
     }

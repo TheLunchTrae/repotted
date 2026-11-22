@@ -1,6 +1,7 @@
 import { editProfile, previewProfile, resolveProfile } from '@repotted/core';
 import { afterEach, expect, test } from 'vitest';
 
+import { stagedStore } from '../../src/app/apply/apply.js';
 import type { EntryList, EntryRow } from '../../src/app/profile-editor/entry-edits.js';
 import { ProfileEditor, type SettingRow } from '../../src/app/profile-editor/profile-editor.js';
 import { type SettingField, type SettingGroup, settingSections } from '../../src/app/profile-editor/setting-fields.js';
@@ -10,12 +11,14 @@ afterEach(async () => {
   await rm('/', { recursive: true });
 });
 
+/** A file that names `apply_to` opens as an apply's one-off edits over the profiles it names. */
 async function opened(files: Record<string, string>, name = 'web.yaml'): Promise<ProfileEditor> {
   await mkdir('/profiles', { recursive: true });
   for (const [file, text] of Object.entries(files)) {
     await writeFile(`/profiles/${file}`, text);
   }
-  const editor = new ProfileEditor(`/profiles/${name}`);
+  const store = files[name]?.startsWith('apply_to:') === true ? stagedStore : undefined;
+  const editor = new ProfileEditor(`/profiles/${name}`, undefined, store);
   await editor.load();
   return editor;
 }
@@ -60,8 +63,9 @@ const write = (work: () => Promise<void>): Promise<void> => work();
 
 const base = 'security:\n  code_scanning_default_setup:\n    threat_model: remote\n';
 
-const codeScanning = `extends: base.yaml
-security:
+const applyOverBase = 'apply_to: lunch/app\nextends: base.yaml\n';
+
+const codeScanning = `${applyOverBase}security:
   vulnerability_alerts: true
   code_scanning_default_setup:
     state: configured
@@ -155,8 +159,7 @@ test('a change made while the batch change previews takes away its undo', async 
   expect(editor.batchDone.value).toBeUndefined();
 });
 
-const lists = `extends: base.yaml
-rulesets:
+const lists = `${applyOverBase}rulesets:
   - name: Main
     target: branch
     enforcement: active
@@ -213,7 +216,7 @@ test('a fresh read takes away the undo, so it cannot bring back changes made bef
 test('every other kind of change takes away the undo', async () => {
   const editor = await opened({
     'base.yaml': base,
-    'web.yaml': `${codeScanning}${lists.replace('extends: base.yaml\n', '')}`,
+    'web.yaml': `${codeScanning}${lists.replace(applyOverBase, '')}`,
   });
   const changes: readonly (readonly [string, () => Promise<void>])[] = [
     ['a reset', () => editor.reset(field('security.vulnerability_alerts'))],
@@ -234,7 +237,7 @@ test('every other kind of change takes away the undo', async () => {
 });
 
 test('a change made while a list batch previews takes away its undo', async () => {
-  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  const editor = await opened({ 'web.yaml': lists.replace(applyOverBase, '') });
 
   const takingOut = editor.takeOutAllIn('rulesets');
   const changing = editor.changeEntry(entry(editor, 'labels', 'bug'), { name: 'bug', color: '000000' });
@@ -287,7 +290,7 @@ test('settings owners of the profile type lack are neither counted nor removed',
 test("a base's entry changed here counts for Reset all but can't be taken out", async () => {
   const editor = await opened({
     'base.yaml': 'rulesets:\n  - name: Signed\n    target: branch\n    enforcement: active\n',
-    'web.yaml': 'extends: base.yaml\n',
+    'web.yaml': applyOverBase,
   });
   await editor.changeEntry(entry(editor, 'rulesets', 'Signed'), {
     ...entry(editor, 'rulesets', 'Signed').entry,
@@ -303,7 +306,7 @@ test("a base's entry changed here counts for Reset all but can't be taken out", 
 });
 
 test('Take out all drops a change to an entry a sync took away, so the save can go on', async () => {
-  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  const editor = await opened({ 'web.yaml': lists.replace(applyOverBase, '') });
   await editor.changeEntry(entry(editor, 'labels', 'bug'), { name: 'bug', color: '000000' });
   await writeFile('/profiles/web.yaml', 'rulesets:\n  - name: Main\n    target: branch\n    enforcement: active\n');
   await editor.load();
@@ -417,7 +420,7 @@ test('a setting shown only for an option found under it is not removed with the 
 
 test("a list's batch actions change only the selected entries while any are, and selecting keeps the undo", async () => {
   const editor = await opened({
-    'web.yaml': `${lists.replace('extends: base.yaml\n', '')}  - name: Docs\n    color: 0075ca\n`,
+    'web.yaml': `${lists.replace(applyOverBase, '')}  - name: Docs\n    color: 0075ca\n`,
   });
   const bug = entry(editor, 'labels', 'bug');
   editor.selectEntry(bug, true);
@@ -450,7 +453,7 @@ test("a list's batch actions change only the selected entries while any are, and
 });
 
 test('Put all back brings back each entry taken out, and a new one that went is no longer selected', async () => {
-  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  const editor = await opened({ 'web.yaml': lists.replace(applyOverBase, '') });
   const key = await editor.addEntry('labels', { name: 'docs', color: '0075ca' });
   const added = editor.entries.value.labels.find((item) => item.key === key);
   if (added === undefined) {
@@ -470,7 +473,7 @@ test('Put all back brings back each entry taken out, and a new one that went is 
 });
 
 test("the save bar's Reset offers Undo, which brings back every change; other resets don't", async () => {
-  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  const editor = await opened({ 'web.yaml': lists.replace(applyOverBase, '') });
   await editor.set(field('repository.has_wiki'), false);
   await editor.type(field('repository.default_branch'), 'main dev');
   await editor.changeEntry(entry(editor, 'labels', 'bug'), { name: 'bug', color: '000000' });
@@ -515,18 +518,18 @@ test('the save bar Reset holds no undo while saving, and a change while a found 
 });
 
 test('a fresh read clears the selection, so a key given to another entry is not selected', async () => {
-  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  const editor = await opened({ 'web.yaml': lists.replace(applyOverBase, '') });
   editor.selectEntry(entry(editor, 'rulesets', 'Main'), true);
   await writeFile('/profiles/web.yaml', 'labels:\n  - name: bug\n    color: d73a4a\n');
   await editor.load();
-  await writeFile('/profiles/web.yaml', lists.replace('extends: base.yaml\n', ''));
+  await writeFile('/profiles/web.yaml', lists.replace(applyOverBase, ''));
   await editor.load();
 
   expect(editor.entryListBatches.value.rulesets.selected).toBe(0);
 });
 
 test('a save clears the selection', async () => {
-  const editor = await opened({ 'web.yaml': lists.replace('extends: base.yaml\n', '') });
+  const editor = await opened({ 'web.yaml': lists.replace(applyOverBase, '') });
   editor.selectEntry(entry(editor, 'labels', 'bug'), true);
   await editor.set(field('repository.has_wiki'), false);
 

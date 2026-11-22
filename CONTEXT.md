@@ -7,8 +7,6 @@
   targeting, and rules for allowed triggering actors and events. A repository
   can have several policies. General Actions settings, such as allowed actions
   and token permissions, are separate settings, not policy definitions.
-- **Base profile**: a profile that others build on with `extends`. A profile
-  that extends it is an **override**.
 - **Section**: one area of a repository's setup that a profile can manage:
   repository settings, merge methods, Actions settings, Actions policies, security settings,
   custom properties, GitHub Pages, autolinks, rulesets, deployment

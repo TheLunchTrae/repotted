@@ -334,11 +334,10 @@ parse go unmentioned there.
 transitions.
 
 A profile folder is a real subfolder of the profiles folder, which the list
-shows only while a profile is in it, and `extends` is a path from the
+shows only while a profile is in it, and a reference is a path from the
 profile's own folder. `Profiles.move` and `Profiles.renameFolder` move files,
-and in the same turn rewrite `extends` in every listed profile whose path to
-its base changes, with core's `withExtends`, which replaces only the value's
-text. A write that fails takes back the writes before it, so a move is made
+and in the same turn rewrite the references in every listed profile whose
+path to a definition changes, with core's `withRewrittenReferences`. A write that fails takes back the writes before it, so a move is made
 whole or not at all. The batch selection, `Profiles.batch`, and which folders
 are closed are kept for the visit only, never in shared preferences, so
 opening a folder or selecting a profile commits nothing.
@@ -494,7 +493,7 @@ belong to profiles and never form an apply state.
 `config-protection.ts` holds the built-in protection for a config
 repository, as profile YAML by what owns the repository, and checks the
 repository the profiles are kept in against it. Its apply is an ordinary
-apply whose staged file extends `/built-in/<name>.yaml`, which `Apply` marks
+apply whose staged file lists `/built-in/<name>.yaml` in `extends`, which `Apply` marks
 `builtIn` so the edits can't be saved back to it. A new built-in, such as one
 for organizations, is another entry there.
 [State machines](state-machines.md#web-config-repository-protection) lists

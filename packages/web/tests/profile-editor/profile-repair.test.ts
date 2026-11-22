@@ -10,12 +10,11 @@ afterEach(async () => {
 
 const file = '/profiles/teams/web.yaml';
 const invalid = 'repository: [\n';
-const corrected = '# Keep this comment.\r\nextends: ../base.yaml\r\nrepository:\r\n  has_wiki: true\r\n';
+const corrected = '# Keep this comment.\r\nrepository:\r\n  has_wiki: true\r\n';
 const write = (work: () => Promise<void>): Promise<void> => work();
 
 async function opened(text = invalid): Promise<ProfileEditor> {
   await mkdir('/profiles/teams', { recursive: true });
-  await writeFile('/profiles/base.yaml', 'repository:\n  has_issues: false\n');
   await writeFile(file, text);
   const editor = new ProfileEditor(file);
   await editor.load();
@@ -33,12 +32,9 @@ function repairOf(editor: ProfileEditor) {
 test('previews replacement text at its file path without writing the invalid file', async () => {
   await opened();
   const result = await resolveProfile(file, corrected);
-  expect(result.chain).toEqual([file, '/profiles/base.yaml']);
-  expect(result.profile.repository).toEqual({ has_wiki: true, has_issues: false });
+  expect(result.chain).toEqual([file]);
+  expect(result.profile.repository).toEqual({ has_wiki: true });
   expect(await readFile(file, 'utf8')).toBe(invalid);
-  await expect(resolveProfile(file, 'extends: web.yaml\n')).rejects.toThrow('extends itself');
-  await writeFile('/profiles/base.yaml', 'extends: teams/web.yaml\n');
-  await expect(resolveProfile(file, corrected)).rejects.toThrow('extends itself');
 });
 
 test.each([invalid, 'repository: [\n'])('an invalid profile offers a validated whole-file repair: %s', async (text) => {
@@ -106,10 +102,10 @@ test('a whole-file save refuses a change made while it waits in the queue', asyn
   expect(repair.text.value).toBe(corrected);
 });
 
-test('syntax repair opens the settings even when the configuration or a base is invalid', async () => {
+test('syntax repair opens the settings even when the configuration is invalid or names a profile to extend', async () => {
   const editor = await opened();
   const repair = repairOf(editor);
-  await repair.type('extends: ../missing.yaml\nrepository:\n  has_wiki: broken\n');
+  await repair.type('extends: ../base.yaml\nrepository:\n  has_wiki: broken\n');
   expect(repair.canSave.value).toBe(true);
   await editor.save(write);
   expect(editor.repair.value).toBeUndefined();

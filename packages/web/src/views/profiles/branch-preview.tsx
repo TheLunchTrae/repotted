@@ -21,7 +21,7 @@ const statuses: Readonly<Record<PreviewStatus, { readonly label: string; readonl
   removed: { label: 'Removed', pill: 'pill pill-remove' },
   changed: { label: 'Changed', pill: 'pill pill-drift' },
   renamed: { label: 'Moved', pill: 'pill pill-drift' },
-  'through-base': { label: 'Changed by its base', pill: 'pill' },
+  'through-reference': { label: 'Changed by a shared definition', pill: 'pill' },
 };
 
 const kinds = { changes: 'Changes', adds: 'Adds', removes: 'Removes' } as const;
@@ -132,7 +132,7 @@ function Row({ row, base }: { readonly row: PreviewRow; readonly base: string })
       <span class="compare-what">
         <strong>{row.label}</strong>
         <span class="mono small muted">{row.key}</span>
-        {row.fromExtendedProfile !== undefined && <span class="muted small">From {row.fromExtendedProfile}</span>}
+        {row.fromOtherFile !== undefined && <span class="muted small">From {row.fromOtherFile}</span>}
       </span>
       <span class="compare-values">
         <span class="visually-hidden">

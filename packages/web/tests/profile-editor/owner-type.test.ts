@@ -130,16 +130,19 @@ test('the type waits for unsaved changes, and for a file that changed since it w
   expect(editor.ownerLeaving('user')).toHaveLength(5);
 });
 
-test("a type from a base profile is that profile's to change, and a base that sets what a type lacks stops the change", async () => {
+test("a type from a definition it references is that definition's to change, and one that sets what a type lacks stops the change", async () => {
   const typed = await opened({
-    'base.yaml': 'owner_type: organization\n',
-    'web.yaml': 'extends: base.yaml\nrepository:\n  has_wiki: false\n',
+    'base.yaml': 'kind: ruleset\nowner_type: organization\nrulesets: [{ name: Main }]\n',
+    'web.yaml': 'references: { rulesets: [base.yaml] }\nrepository:\n  has_wiki: false\n',
   });
   expect(typed.ownerType.value).toBe('organization');
   expect(typed.ownerTypeFrom.value).toBe('base.yaml');
 
-  const text = 'extends: base.yaml\nrepository:\n  has_wiki: false\n';
-  const editor = await opened({ 'base.yaml': 'repository:\n  allow_forking: true\n', 'web.yaml': text });
+  const text = 'references: { rulesets: [base.yaml] }\nrepository:\n  has_wiki: false\n';
+  const editor = await opened({
+    'base.yaml': 'kind: ruleset\nrulesets: [{ name: Pushes, target: push }]\n',
+    'web.yaml': text,
+  });
   expect(editor.ownerTypeFrom.value).toBeUndefined();
 
   await editor.changeOwnerType(write, 'user');
@@ -149,9 +152,12 @@ test("a type from a base profile is that profile's to change, and a base that se
   expect(editor.ownerType.value).toBeUndefined();
 });
 
-test("a base profile's type holds even when the file repeats it, so the change is left to the base", async () => {
-  const text = 'extends: base.yaml\nowner_type: organization\n';
-  const editor = await opened({ 'base.yaml': 'owner_type: organization\n', 'web.yaml': text });
+test("a referenced definition's type holds even when the file repeats it, so the change is left to the definition", async () => {
+  const text = 'owner_type: organization\nreferences: { rulesets: [base.yaml] }\n';
+  const editor = await opened({
+    'base.yaml': 'kind: ruleset\nowner_type: organization\nrulesets: [{ name: Main }]\n',
+    'web.yaml': text,
+  });
 
   expect(editor.ownerTypeFrom.value).toBe('base.yaml');
   await editor.changeOwnerType(write, 'any');

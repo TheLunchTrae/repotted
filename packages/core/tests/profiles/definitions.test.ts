@@ -30,18 +30,15 @@ async function write(name: string, text: string): Promise<string> {
 const policyText = (enforcement = 'active', name = 'Release'): string =>
   `kind: actions-policy\nactions_policies: [{ name: ${name}, enforcement: ${enforcement}, rules: [{ type: restrict_action_events, parameters: { allowed_events: [release, workflow_dispatch] } }] }]\n`;
 
-test('several referenced policies compose with bases and whole inline overrides, retaining sources', async () => {
+test('several referenced policies compose with earlier profiles and whole inline overrides, retaining sources', async () => {
   const release = await write('release.yaml', policyText());
   const quality = await write('quality.yaml', policyText('active', 'Quality'));
   const base = await write(
     'base.yaml',
     'actions: { default_workflow_permissions: read }\nactions_policies: [{ name: Release, enforcement: disabled }]\n',
   );
-  const file = await write(
-    'service.yaml',
-    'extends: base.yaml\nreferences: { actions_policies: [release.yaml, quality.yaml] }\n',
-  );
-  const resolved = await resolveProfile(file);
+  const file = await write('service.yaml', 'references: { actions_policies: [release.yaml, quality.yaml] }\n');
+  const resolved = await resolveProfilesTogether([base, file]);
   expect(resolved.profile.actions_policies?.map((item) => item.name)).toEqual(['Release', 'Quality']);
   expect(resolved.sources.actions_policies).toEqual({ Release: release, Quality: quality });
   expect(resolved.sources.actions).toEqual({ default_workflow_permissions: base });
@@ -54,7 +51,6 @@ test('several referenced policies compose with bases and whole inline overrides,
   });
   expect((await resolveProfile(file)).references).toEqual({ actions_policies: ['release.yaml', 'quality.yaml'] });
   expect((await listProfiles(folder)).find((item) => item.file === file)).toMatchObject({
-    extends: base,
     references: [release, quality],
   });
 });
@@ -101,7 +97,7 @@ test('an explicitly repeated reference reapplies after an earlier inline overrid
   });
 });
 
-test('missing, wrong-kind, duplicate-target, cross-section, and inherited definitions block resolution', async () => {
+test('missing, wrong-kind, duplicate-target, and cross-section definitions block resolution', async () => {
   await expect(parseProfile('references: { actions_policies: [nonexistent.yaml] }', folder)).rejects.toThrow(
     'Cannot read reusable definition',
   );
@@ -120,9 +116,6 @@ test('missing, wrong-kind, duplicate-target, cross-section, and inherited defini
   await expect(parseProfile('references: { actions_policies: [same-a.yaml, same-b.yaml] }', folder)).rejects.toThrow(
     'supplied by both',
   );
-  const inherited = await write('inherited.yaml', 'extends: same-a.yaml');
-  await expect(resolveProfilesTogether([inherited])).rejects.toThrow('use references instead of extends');
-  await expect(resolveProfile(inherited)).rejects.toThrow('use references instead of extends');
   await expect(parseProfile('references: { action: missing.yaml }', folder)).rejects.toThrow('Unrecognized key');
 });
 

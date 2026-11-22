@@ -39,7 +39,7 @@ test('prunes once after merging the entire combination and never prunes an exclu
     expect((await planStagedApply(github, staged)).plan.changes).toEqual([]);
     expect((await resolveStagedApply(staged)).authoritative).toEqual(['rulesets']);
     expect(github.writes).toEqual([]);
-    await writeFile(second, 'extends: missing.yaml\n');
+    await writeFile(second, 'rulesets: [{ name: Release }, { name: Release }]\n');
     await expect(planStagedApply(github, staged)).rejects.toThrow();
     expect(github.writes).toEqual([]);
   } finally {
@@ -204,7 +204,6 @@ test.each([
   ['staged', 'edit'],
   ['staged', 'delete'],
   ['profile', 'edit'],
-  ['text', 'edit'],
 ] as const)(
   'a %s source %s during authoritative revalidation cannot authorize a stale deletion',
   async (kind, change) => {
@@ -221,7 +220,7 @@ test.each([
           ? planned
           : {
               ...planned,
-              source: kind === 'profile' ? { profile: source } : { text: 'extends: base.yaml\n', directory },
+              source: { profile: source },
             };
       let release = (): void => undefined;
       let entered = (): void => undefined;

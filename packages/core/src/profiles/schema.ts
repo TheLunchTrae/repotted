@@ -781,7 +781,14 @@ export type ProfileReferences = z.infer<typeof profileReferences>;
 export const profileFile = z.object({
   kind: definitionKind.optional(),
   references: profileReferences.optional(),
-  extends: z.string().min(1).optional(),
+  // Refused rather than dropped as an unknown key, so a profile written to build
+  // on another never applies without what it built on.
+  extends: z
+    .never({
+      error:
+        'A profile cannot extend another. Copy the settings it needs into this file, or apply the profiles together.',
+    })
+    .optional(),
   owner_type: ownerType.optional(),
   repository: repositorySettings.optional(),
   merge: mergeSettings.optional(),

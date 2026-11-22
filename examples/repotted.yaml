@@ -1,5 +1,5 @@
-# The profile for this repository: the base setup plus its required check.
-extends: base.yaml
+# What this repository adds to the standard setup: its required check and its
+# release environment. Apply base.yaml first, then this profile.
 
 rulesets:
   - name: 'Main: Require Status Checks'

@@ -45,7 +45,7 @@ export function NewProfileForm({
   const [name, setName] = useState('');
   const [folder, setFolder] = useState(profiles.selected.value?.folder ?? '');
   const [kind, setKind] = useState<NewProfileStart['kind']>(repositoryToCapture === undefined ? 'empty' : 'repository');
-  const [pickedBase, setBaseFile] = useState<string | undefined>(undefined);
+  const [pickedSource, setSourceFile] = useState<string | undefined>(undefined);
   const [pickedFrom, setFrom] = useState(repositoryToCapture);
   const [owner, setOwner] = useState<OwnerChoice>('any');
   const [readingFile, setReadingFile] = useState(false);
@@ -61,8 +61,8 @@ export function NewProfileForm({
     [],
   );
 
-  const base = listings.find((listing) => listing.file === pickedBase) ?? listings[0];
-  const baseFile = base?.file ?? '';
+  const source = listings.find((listing) => listing.file === pickedSource) ?? listings[0];
+  const sourceFile = source?.file ?? '';
   const from =
     captured.find((item) => item.full_name === pickedFrom)?.full_name ?? pickedFrom ?? captured[0]?.full_name ?? '';
   const start: NewProfileStart | undefined =
@@ -71,22 +71,13 @@ export function NewProfileForm({
       : kind === 'import'
         ? { kind, text: importText }
         : kind === 'duplicate'
-          ? base === undefined
+          ? source === undefined
             ? undefined
-            : { kind, source: base }
-          : kind === 'extends'
-            ? base === undefined
-              ? undefined
-              : { kind, base }
-            : from === ''
-              ? undefined
-              : { kind, repository: from };
-  const fixedOwner =
-    kind === 'repository'
-      ? "The repository's owner sets the type."
-      : kind === 'extends' && base !== undefined && base.owner_type !== null
-        ? `${base.name} is for ${ownerLabels[base.owner_type].toLowerCase()}, so this one is too.`
-        : undefined;
+            : { kind, source }
+          : from === ''
+            ? undefined
+            : { kind, repository: from };
+  const fixedOwner = kind === 'repository' ? "The repository's owner sets the type." : undefined;
   // Ordinary creation finishes once the form is gone, but a capture stops with it.
   useLeaveQuestion(router, () =>
     creating
@@ -238,41 +229,6 @@ export function NewProfileForm({
           <input
             type="radio"
             name="start"
-            checked={kind === 'extends'}
-            disabled={listings.length === 0 || definitionKind !== undefined}
-            onChange={() => {
-              setKind('extends');
-            }}
-          />
-          <span>
-            <strong>Another profile</strong>
-            <span class="muted small">
-              {listings.length > 0
-                ? 'Extends it, so it gets every setting the other one sets.'
-                : 'There is no other profile to extend yet.'}
-            </span>
-            {kind === 'extends' && (
-              <select
-                class="field"
-                aria-label="Profile to extend"
-                value={baseFile}
-                onChange={(event) => {
-                  setBaseFile(event.currentTarget.value);
-                }}
-              >
-                {listings.map((listing) => (
-                  <option key={listing.file} value={listing.file}>
-                    {profiles.pathOf(listing)}
-                  </option>
-                ))}
-              </select>
-            )}
-          </span>
-        </label>
-        <label class="choice">
-          <input
-            type="radio"
-            name="start"
             checked={kind === 'repository'}
             disabled={captured.length === 0}
             onChange={() => {
@@ -313,9 +269,9 @@ export function NewProfileForm({
         <select
           class="field"
           disabled={working}
-          value={kind === 'duplicate' ? baseFile : ''}
+          value={kind === 'duplicate' ? sourceFile : ''}
           onChange={(event) => {
-            setBaseFile(event.currentTarget.value);
+            setSourceFile(event.currentTarget.value);
             setKind('duplicate');
           }}
         >

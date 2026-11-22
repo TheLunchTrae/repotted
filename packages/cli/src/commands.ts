@@ -520,13 +520,9 @@ async function profiles(io: Io, args: string[]): Promise<number> {
   }
   const label = (listing: (typeof listings)[number]): string =>
     listing.folder === '' ? listing.name : `${listing.folder}/${listing.name}`;
-  const labels = new Map(listings.map((listing) => [listing.file, label(listing)]));
   for (const listing of listings) {
     const notes = [
       listing.owner_type === null ? '' : `for ${listing.owner_type === 'user' ? 'personal accounts' : 'organizations'}`,
-      listing.extends === null
-        ? ''
-        : `extends ${labels.get(listing.extends) ?? path.basename(listing.extends, path.extname(listing.extends))}`,
       listing.problem === null ? '' : 'invalid',
     ].filter(Boolean);
     io.out(`${label(listing)}${notes.length > 0 ? ` (${notes.join(', ')})` : ''}\n`);
