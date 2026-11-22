@@ -150,8 +150,7 @@ export interface LayerRead {
   readonly adjust?: Adjust | undefined;
   /**
    * The profiles the file builds on, in order, each resolved from the file's
-   * folder; later ones override earlier ones. The layer's own `extends` when
-   * left out.
+   * folder; later ones override earlier ones.
    */
   readonly listedProfiles?: readonly string[] | undefined;
 }
@@ -368,7 +367,7 @@ interface ParsedLayer<Read extends LayerRead> {
   readonly read: Read;
   readonly own: OwnProfile;
   readonly drafts: Drafts;
-  readonly extends: readonly string[];
+  readonly listedProfiles: readonly string[];
 }
 
 function parseLayer<Read extends LayerRead>(text: string, source: string, kind: Layer<Read>): ParsedLayer<Read> {
@@ -506,7 +505,7 @@ function parseLayer<Read extends LayerRead>(text: string, source: string, kind: 
       environments: draftEnvironments,
       labels: draftLabels,
     },
-    extends: result.data.listedProfiles ?? (settings.extends === undefined ? [] : [settings.extends]),
+    listedProfiles: result.data.listedProfiles ?? [],
   };
 }
 
@@ -849,7 +848,7 @@ export type ProfileSources = Readonly<
 export interface ResolvedProfile {
   readonly kind?: DefinitionKind | undefined;
   readonly references?: ProfileFile['references'];
-  /** The profile file, then each one it extends, as real paths. */
+  /** The first file, then each file it builds on, as real paths. */
   readonly chain: readonly string[];
   readonly profile: Profile;
   readonly drafts: Drafts;
@@ -874,10 +873,10 @@ interface Link {
   readonly parsed: OwnProfile;
   readonly drafts: Drafts;
   /**
-   * Which of the profiles the first file lists reach this file through their
-   * own chains, by their places in that list. Empty for the first file itself.
+   * The place, in the first file's list, of the profile that brings this file,
+   * as itself or as a reference. Undefined for the first file and its references.
    */
-  readonly listedIn: ReadonlySet<number>;
+  readonly listedAt: number | undefined;
 }
 
 interface Chain<Read extends LayerRead> {
@@ -898,26 +897,13 @@ async function readText(file: string, noun: string): Promise<{ file: string; tex
   }
 }
 
-/** A profile and the one it extends, and so on, nearest first. */
-async function readExtendsChain(start: string, listingFile: string | undefined): Promise<Link[]> {
-  const links: Link[] = [];
-  const seen = new Set(listingFile === undefined ? [] : [listingFile]);
-  let next: string | undefined = start;
-  while (next !== undefined) {
-    const { file: resolved, text } = await readText(next, profileLayer.noun);
-    if (seen.has(resolved)) {
-      throw new ProfileError(`Profile ${resolved} extends itself`);
-    }
-    seen.add(resolved);
-    const parsed = parseLayer(text, resolved, profileLayer);
-    if (links.length > 0 && parsed.own.kind !== undefined) {
-      throw new ProfileError(`${resolved} is a reusable definition; use references instead of extends`);
-    }
-    links.push({ file: resolved, parsed: parsed.own, drafts: parsed.drafts, listedIn: new Set() });
-    const [parent] = parsed.extends;
-    next = parent === undefined ? undefined : path.resolve(path.dirname(resolved), parent);
+async function readListedProfile(file: string, listingFile: string | undefined, listedAt: number): Promise<Link> {
+  const { file: resolved, text } = await readText(file, profileLayer.noun);
+  if (resolved === listingFile) {
+    throw new ProfileError(`${resolved} lists itself`);
   }
-  return links;
+  const parsed = parseLayer(text, resolved, profileLayer);
+  return { file: resolved, parsed: parsed.own, drafts: parsed.drafts, listedAt };
 }
 
 async function referencedLinks(link: Link, directory = path.dirname(link.file)): Promise<Link[]> {
@@ -952,7 +938,7 @@ async function referencedLinks(link: Link, directory = path.dirname(link.file)):
             targets.set(key, read.file);
           }
         }
-        links.push({ file: read.file, parsed: parsed.own, drafts: parsed.drafts, listedIn: link.listedIn });
+        links.push({ file: read.file, parsed: parsed.own, drafts: parsed.drafts, listedAt: link.listedAt });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         throw new ProfileError(`${link.file}: ${message}`, {
@@ -979,48 +965,23 @@ interface Listed {
   readonly listedProfiles: readonly string[];
 }
 
-/**
- * Each listed profile brings the profiles it extends, and they apply in the
- * order the profiles are listed. A file that more than one of them builds on,
- * such as a shared starting point, applies once, at its first place. So a
- * profile listed after one that already builds on it would change nothing,
- * and is refused.
- */
+/** Each listed profile applies with the definitions it references, in the order the profiles are listed. */
 async function readListed(
   listed: readonly string[],
   folder: string | undefined,
   listingFile: string | undefined,
   namedTwice: (named: string) => string,
 ): Promise<Listed> {
-  const chains: { readonly named: string; readonly chain: readonly Link[] }[] = [];
-  for (const profile of listed) {
+  const links: Link[] = [];
+  for (const [index, profile] of listed.entries()) {
     const start = folder === undefined ? path.resolve(profile) : path.resolve(folder, profile);
-    const chain = await readExtendsChain(start, listingFile);
-    const named = chain[0]?.file ?? start;
-    if (chains.some((earlier) => earlier.named === named)) {
-      throw new ProfileError(namedTwice(named));
+    const link = await readListedProfile(start, listingFile, index);
+    if (links.some((earlier) => earlier.file === link.file)) {
+      throw new ProfileError(namedTwice(link.file));
     }
-    const through = chains.find((earlier) => earlier.chain.some((link) => link.file === named));
-    if (through !== undefined) {
-      throw new ProfileError(
-        `${named} is already applied through ${through.named}, so listing it after that changes nothing`,
-      );
-    }
-    chains.push({ named, chain });
+    links.push(link);
   }
-  const listedIn = (file: string): ReadonlySet<number> =>
-    new Set(chains.flatMap(({ chain }, index) => (chain.some((link) => link.file === file) ? [index] : [])));
-  const appliedFirst: Link[] = [];
-  const included = new Set<string>();
-  for (const { chain } of chains) {
-    for (const link of chain.toReversed()) {
-      if (!included.has(link.file)) {
-        included.add(link.file);
-        appliedFirst.push({ ...link, listedIn: listedIn(link.file) });
-      }
-    }
-  }
-  return { appliedFirst: await withReferencedLinks(appliedFirst), listedProfiles: chains.map(({ named }) => named) };
+  return { appliedFirst: await withReferencedLinks(links), listedProfiles: links.map((link) => link.file) };
 }
 
 async function readChain<Read extends LayerRead>(
@@ -1032,7 +993,7 @@ async function readChain<Read extends LayerRead>(
   const text = replacementText ?? first.text;
   const head = parseLayer(text, first.file, kind);
   const { appliedFirst, listedProfiles } = await readListed(
-    head.extends,
+    head.listedProfiles,
     path.dirname(first.file),
     first.file,
     (named) => `${first.file} names ${named} more than once in extends`,
@@ -1046,19 +1007,13 @@ async function readChain<Read extends LayerRead>(
       problems: [{ file: first.file, path: ['extends'], message }],
     });
   });
-  if (
-    kind.noun === profileLayer.noun &&
-    appliedFirst.some((link) => listedProfiles.includes(link.file) && link.parsed.kind !== undefined)
-  ) {
-    throw new ProfileError(`${first.file}: use references instead of extends for reusable definitions`);
-  }
   return {
     head: head.read,
     text,
     links: [
-      { file: first.file, parsed: head.own, drafts: head.drafts, listedIn: new Set() },
+      { file: first.file, parsed: head.own, drafts: head.drafts, listedAt: undefined },
       ...(
-        await referencedLinks({ file: first.file, parsed: head.own, drafts: head.drafts, listedIn: new Set() })
+        await referencedLinks({ file: first.file, parsed: head.own, drafts: head.drafts, listedAt: undefined })
       ).toReversed(),
       ...appliedFirst.toReversed(),
     ],
@@ -1094,18 +1049,14 @@ export interface ResolvedLayer<Read extends LayerRead> {
   readonly overrideWarnings: readonly OverrideWarning[];
 }
 
-/** Whether one listed profile's chain holds both, or either is the first file itself. */
+/** Whether one listed profile brings both, or either comes with the first file itself. */
 function sharesListedProfile(left: Link, right: Link): boolean {
-  return (
-    left.listedIn.size === 0 ||
-    right.listedIn.size === 0 ||
-    [...left.listedIn].some((index) => right.listedIn.has(index))
-  );
+  return left.listedAt === undefined || right.listedAt === undefined || left.listedAt === right.listedAt;
 }
 
 /**
  * The nearest file that names an owner type sets it. Files that name different
- * ones cannot extend each other or apply together.
+ * ones cannot build on each other or apply together.
  */
 function chainOwnerType(chain: readonly Link[]): { type: OwnerType; file: string } | undefined {
   const typed = chain.flatMap((link) =>
@@ -1249,13 +1200,12 @@ export interface OverrideWarning {
 
 /**
  * A listed profile that removes an entry, or the Pages site, that an earlier
- * one adds wins, since later profiles override earlier ones. A profile
- * removing what a profile in its own chain adds is how a profile drops an
- * entry, so only removals across listed profiles are named.
+ * one adds wins, since later profiles override earlier ones, which is easy to
+ * miss. Removals within one listed profile and its references are not named.
  */
 function removalWarnings(links: readonly Link[]): OverrideWarning[] {
   const warnings: OverrideWarning[] = [];
-  const appliedBaseFirst = links.filter((link) => link.listedIn.size > 0).toReversed();
+  const appliedBaseFirst = links.filter((link) => link.listedAt !== undefined).toReversed();
   const adders = new Map<string, Link>();
   for (const link of appliedBaseFirst) {
     for (const entry of removableEntries(link.parsed)) {
@@ -1307,7 +1257,7 @@ function resolveChain(
   const mergedDrafts = chain
     .toReversed()
     .reduce<SourcedDrafts>((base, { file, drafts }) => mergeLayers(base, drafts, file), { settings: {} });
-  // A file's unset stands in for the same key in the files it extends.
+  // A file's unset stands in for the same key in the files it builds on.
   const unset = new Map<string, Sourced<string>>();
   for (const { file, drafts: own } of chain.toReversed()) {
     for (const key of own.unset ?? []) {
@@ -1373,21 +1323,16 @@ export async function resolveLayer<Read extends LayerRead>(
   };
 }
 
-/** Replacement text is checked at the file's real path, including inheritance cycles, without writing it. */
+/** Replacement text is checked at the file's real path, without writing it. */
 export async function resolveProfile(file: string, replacementText?: string): Promise<ResolvedProfile> {
   return (await resolveLayer(file, profileLayer, replacementText)).resolved;
 }
 
-/** For profile YAML that is not in a file, such as text an agent sends. `extends` resolves from `directory`. */
+/** For profile YAML that is not in a file, such as text an agent sends. References resolve from `directory`. */
 export async function parseProfile(text: string, directory: string): Promise<ResolvedProfile> {
   const parsed = parseLayer(text, 'The profile', profileLayer);
-  const [parent] = parsed.extends;
-  const base = parent === undefined ? [] : (await readChain(path.resolve(directory, parent), profileLayer)).links;
-  if (base.length > 0 && base[0].parsed.kind !== undefined) {
-    throw new ProfileError('The profile must use references instead of extends for reusable definitions');
-  }
-  const own = { file: 'The profile', parsed: parsed.own, drafts: parsed.drafts, listedIn: new Set<number>() };
-  return resolveChain([own, ...(await referencedLinks(own, directory)).toReversed(), ...base], 'The profile').resolved;
+  const own = { file: 'The profile', parsed: parsed.own, drafts: parsed.drafts, listedAt: undefined };
+  return resolveChain([own, ...(await referencedLinks(own, directory)).toReversed()], 'The profile').resolved;
 }
 
 /**
@@ -1416,8 +1361,6 @@ export interface ProfileListing {
   /** The subfolder the file is in, from the listed folder, with `/` separators; '' for the folder itself. */
   readonly folder: string;
   readonly file: string;
-  /** Null when it extends none or the profile it extends cannot be read. */
-  readonly extends: string | null;
   /** Null when it resolves. */
   readonly problem: string | null;
   /** Null when it is for any owner or doesn't resolve. */
@@ -1443,7 +1386,6 @@ async function listFolder(root: string, folder: string, entries: Dirent[], listi
   const byName = (a: Dirent, b: Dirent): number => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   for (const entry of entries.filter((item) => /\.ya?ml$/iu.test(item.name) && !item.isDirectory()).sort(byName)) {
     let file = path.join(root, folder, entry.name);
-    let base: string | null = null;
     let problem: string | null = null;
     let owner: OwnerType | null = null;
     let kind: DefinitionKind | undefined;
@@ -1453,9 +1395,8 @@ async function listFolder(root: string, folder: string, entries: Dirent[], listi
       references = declaredReferences(text).map((reference) => path.resolve(path.dirname(file), reference));
       const raw: unknown = parse(text);
       kind = isRecord(raw) ? definitionKind.safeParse(raw['kind']).data : undefined;
-      const { links, head } = await readChain(file, profileLayer);
+      const { links } = await readChain(file, profileLayer);
       file = links[0].file;
-      base = head.layer.extends === undefined ? null : path.resolve(path.dirname(file), head.layer.extends);
       owner = resolveChain(links, file).resolved.profile.owner_type ?? null;
     } catch (error) {
       problem = error instanceof Error ? error.message : String(error);
@@ -1464,7 +1405,6 @@ async function listFolder(root: string, folder: string, entries: Dirent[], listi
       name: entry.name.replace(/\.ya?ml$/iu, ''),
       folder,
       file,
-      extends: base,
       problem,
       owner_type: owner,
       ...(kind === undefined ? {} : { kind }),
@@ -1544,6 +1484,7 @@ function isEditable(path: readonly string[]): boolean {
   if (
     path.length === 1 &&
     [
+      // Only taken out: a profile that names one is refused until it is gone.
       'extends',
       'owner_type',
       'drafts',
@@ -1727,23 +1668,19 @@ function editEntry(document: Document, edit: EntryEdit, seen: Set<string>): void
   }
 }
 
-/**
- * A file that doesn't name `owner_type` yet gets it first, or right after
- * `extends`, with any comment over the file's first key kept above it.
- */
+/** A file that doesn't name `owner_type` yet gets it first, with any comment over the file's first key kept above it. */
 function setOwnerType(document: Document, value: unknown): void {
   const contents = document.contents;
   if (document.has('owner_type') || !isMap(contents)) {
     document.set('owner_type', value);
     return;
   }
-  const at = contents.items.findIndex((pair) => isScalar(pair.key) && pair.key.value === 'extends') + 1;
   const pair = document.createPair('owner_type', value);
   const first = contents.items[0]?.key;
-  if (at === 0 && isScalar(first) && isScalar(pair.key)) {
+  if (isScalar(first) && isScalar(pair.key)) {
     moveLeadingCommentAndBlankLine(first, pair.key);
   }
-  contents.items.splice(at, 0, pair);
+  contents.items.unshift(pair);
 }
 
 /** The comment over `owner_type` goes to the key after it. */
@@ -1859,10 +1796,7 @@ async function editChain<Read extends LayerRead>(
   const indent = /^( +)\S/mu.exec(original)?.[1]?.length ?? 2;
   const resolveEdited = () => {
     const edited = parseLayer(document.toString({ lineWidth: 0, indent }), own.file, layer);
-    const editedLinks = [
-      { file: own.file, parsed: edited.own, drafts: edited.drafts, listedIn: new Set<number>() },
-      ...base,
-    ];
+    const editedLinks = [{ file: own.file, parsed: edited.own, drafts: edited.drafts, listedAt: undefined }, ...base];
     return {
       head: edited.read,
       ...resolveChain(editedLinks, own.file, edited.read.adjust),
@@ -1931,7 +1865,7 @@ export async function editLayer<Read extends LayerRead>(
 /**
  * Keeps the file's comments, line endings and indent width; YAML layout such
  * as quoting and list indentation may be normalized. The file changes only
- * when the result, laid over the profiles it extends, is a valid profile.
+ * when the result, with the definitions it references, is a valid profile.
  */
 export async function editProfile(file: string, edits: readonly ProfileEdit[]): Promise<ResolvedProfile> {
   return (await editLayer(file, edits, profileLayer)).resolved;
@@ -2020,32 +1954,6 @@ export async function changeOwnerType(file: string, type: OwnerType | undefined)
   } catch (error) {
     throw (await blockingBase(file, type, error)) ?? error;
   }
-}
-
-/** As written, whether or not the file it names reads; undefined for none, or for text that isn't YAML. */
-export function declaredExtends(text: string): string | undefined {
-  const document = parseDocument(text);
-  const base: unknown = document.errors.length > 0 ? undefined : document.get('extends');
-  return typeof base === 'string' ? base : undefined;
-}
-
-/**
- * Points `extends` at `base`, as a move of the profile or of its base needs.
- * Only the value's own text changes, so the rest of the file stays as written.
- */
-export function withExtends(text: string, base: string): string {
-  const document = parseDocument(text);
-  const value = document.get('extends', true);
-  const written = /^[\w./-]+$/u.test(base) ? base : JSON.stringify(base);
-  const inline =
-    isScalar(value) && (value.type === 'PLAIN' || value.type === 'QUOTE_SINGLE' || value.type === 'QUOTE_DOUBLE');
-  if (document.errors.length === 0 && inline && value.range !== undefined && value.range !== null) {
-    const [start, end] = value.range;
-    return text.slice(0, start) + written + text.slice(end);
-  }
-  document.set('extends', base);
-  const edited = document.toString({ lineWidth: 0 });
-  return text.includes('\r\n') ? edited.replaceAll('\n', '\r\n') : edited;
 }
 
 export function stringifyProfile(value: Profile): string {

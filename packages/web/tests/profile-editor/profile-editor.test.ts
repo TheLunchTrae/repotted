@@ -1,6 +1,7 @@
 import { editProfile, previewProfile, profileFileJsonSchema, resolveProfile } from '@repotted/core';
 import { afterEach, expect, test } from 'vitest';
 
+import { stagedStore } from '../../src/app/apply/apply.js';
 import {
   deployKeysBypassActor,
   withBypassActorAdded,
@@ -8,7 +9,12 @@ import {
   withBypassMode,
 } from '../../src/app/profile-editor/bypass-actors.js';
 import type { EntryList, EntryRow } from '../../src/app/profile-editor/entry-edits.js';
-import { nameOfPlace, ProfileEditor, type SettingRow } from '../../src/app/profile-editor/profile-editor.js';
+import {
+  type EditorStore,
+  nameOfPlace,
+  ProfileEditor,
+  type SettingRow,
+} from '../../src/app/profile-editor/profile-editor.js';
 import { type SettingField, settingSections } from '../../src/app/profile-editor/setting-fields.js';
 import { mkdir, readFile, rm, writeFile } from '../../src/engine/files.js';
 
@@ -18,15 +24,18 @@ afterEach(async () => {
 
 const base = '# Every repository starts here.\nrepository:\n  has_wiki: false\nmerge:\n  allow_squash_merge: true\n';
 
-async function opened(files: Record<string, string>, name = 'web.yaml'): Promise<ProfileEditor> {
+async function opened(files: Record<string, string>, name = 'web.yaml', store?: EditorStore): Promise<ProfileEditor> {
   await mkdir('/profiles', { recursive: true });
   for (const [file, text] of Object.entries(files)) {
     await writeFile(`/profiles/${file}`, text);
   }
-  const editor = new ProfileEditor(`/profiles/${name}`);
+  const editor = new ProfileEditor(`/profiles/${name}`, undefined, store);
   await editor.load();
   return editor;
 }
+
+/** An apply's one-off edits, in `web.yaml`, over the profiles that file names. */
+const openedApply = (files: Record<string, string>): Promise<ProfileEditor> => opened(files, 'web.yaml', stagedStore);
 
 function field(path: string): SettingField {
   const found = settingSections
@@ -58,9 +67,9 @@ const labels = (fields: readonly SettingField[] | undefined) => fields?.map((ite
 const write = (work: () => Promise<void>): Promise<void> => work();
 
 test('shows each setting with the profile that sets it, and nothing for one no profile sets', async () => {
-  const editor = await opened({
+  const editor = await openedApply({
     'base.yaml': base,
-    'web.yaml': 'extends: base.yaml\nrepository:\n  has_issues: false\n',
+    'web.yaml': 'apply_to: lunch/app\nextends: base.yaml\nrepository:\n  has_issues: false\n',
   });
 
   expect(row(editor, 'repository.has_issues')).toMatchObject({ value: false, source: 'here', unsaved: false });
@@ -89,7 +98,10 @@ test('a change shows at once, saves only what changed, and keeps the rest of the
 });
 
 test("removing a setting here lets the base profile's value apply again", async () => {
-  const editor = await opened({ 'base.yaml': base, 'web.yaml': 'extends: base.yaml\nrepository:\n  has_wiki: true\n' });
+  const editor = await openedApply({
+    'base.yaml': base,
+    'web.yaml': 'apply_to: lunch/app\nextends: base.yaml\nrepository:\n  has_wiki: true\n',
+  });
 
   await editor.set(field('repository.has_wiki'), undefined);
   expect(row(editor, 'repository.has_wiki')).toMatchObject({ value: false, source: 'base.yaml', unsaved: true });
@@ -266,18 +278,6 @@ test('a yes to a value that turns off settings sets it, and a save removes them'
   expect(await readFile('/profiles/web.yaml', 'utf8')).toBe('actions:\n  enabled: false\n');
 });
 
-test('a value picked that turns off nothing the profile names is set at once', async () => {
-  const editor = await opened({
-    'base.yaml': 'actions:\n  allowed_actions: selected\n',
-    'web.yaml': 'extends: base.yaml\nactions:\n  enabled: true\n',
-  });
-
-  // A base profile's setting stays in its own file, so a save here removes nothing.
-  await editor.choose(field('actions.enabled'), false);
-
-  expect(row(editor, 'actions.enabled')).toMatchObject({ value: false, unsaved: true, choiceToConfirm: undefined });
-});
-
 test('a value picked asks only about settings it turns off that nothing else already does', async () => {
   const editor = await opened({
     'web.yaml':
@@ -385,18 +385,19 @@ test('settings with no change show as saved while another change is refused, and
 });
 
 test('a profile that stops reading keeps its changes unsaved until it reads again', async () => {
-  const editor = await opened({ 'base.yaml': base, 'web.yaml': 'extends: base.yaml\n' });
+  const shared = 'kind: ruleset\nrulesets: [{ name: Main }]\n';
+  const editor = await opened({ 'shared.yaml': shared, 'web.yaml': 'references: { rulesets: [shared.yaml] }\n' });
   await editor.set(field('repository.has_issues'), false);
   expect(editor.dirty.value).toBe(true);
 
-  await rm('/profiles/base.yaml');
+  await rm('/profiles/shared.yaml');
   await editor.load();
   expect(editor.loaded.value).toBe(true);
-  expect(editor.unsavedChangesProblem.value).toContain('base.yaml');
+  expect(editor.unsavedChangesProblem.value).toContain('shared.yaml');
   expect(editor.dirty.value).toBe(true);
   expect(editor.canSave.value).toBe(false);
 
-  await writeFile('/profiles/base.yaml', base);
+  await writeFile('/profiles/shared.yaml', shared);
   await editor.load();
   expect(editor.dirty.value).toBe(true);
   expect(row(editor, 'repository.has_issues')).toMatchObject({ value: false, unsaved: true });
@@ -550,9 +551,9 @@ function entry(editor: ProfileEditor, list: EntryList, name: string): EntryRow {
 }
 
 test('lists each ruleset, environment, and label with the profile that sets it', async () => {
-  const editor = await opened({
+  const editor = await openedApply({
     'base.yaml': entries,
-    'web.yaml': 'extends: base.yaml\nenvironments:\n  - name: production\n    wait_timer: 5\n',
+    'web.yaml': 'apply_to: lunch/app\nextends: base.yaml\nenvironments:\n  - name: production\n    wait_timer: 5\n',
   });
 
   expect(entry(editor, 'rulesets', 'Main')).toMatchObject({
@@ -689,7 +690,7 @@ test('an entry the engine refuses says why and holds the save back', async () =>
 });
 
 test("changing a base profile's entry writes it here, over the base's", async () => {
-  const editor = await opened({ 'base.yaml': entries, 'web.yaml': 'extends: base.yaml\n' });
+  const editor = await openedApply({ 'base.yaml': entries, 'web.yaml': 'apply_to: lunch/app\nextends: base.yaml\n' });
   const main = entry(editor, 'rulesets', 'Main');
 
   await editor.changeEntry(main, { ...main.entry, enforcement: 'disabled' });
@@ -1250,8 +1251,8 @@ test.each([
   ['merge', 'merge: { allow_merge_commit: false }', 'merge.merge_commit_title', 'PR_TITLE'],
   ['squash', 'merge: { allow_squash_merge: false }', 'merge.squash_merge_commit_message', 'PR_BODY'],
 ])('omits %s settings disabled by a base when saving', async (_name, baseText, key, value) => {
-  const original = 'extends: base.yaml\n';
-  const editor = await opened({ 'base.yaml': baseText, 'web.yaml': original });
+  const original = 'apply_to: lunch/app\nextends: base.yaml\n';
+  const editor = await openedApply({ 'base.yaml': baseText, 'web.yaml': original });
 
   await editor.set(field(key), value);
 
@@ -1266,8 +1267,8 @@ test.each([
 test.each(['code_scanning_default_setup', 'code_quality_setup'])(
   'validates configured %s with Actions disabled by a base before saving',
   async (key) => {
-    const original = 'extends: base.yaml\n';
-    const editor = await opened({ 'base.yaml': 'actions: { enabled: false }', 'web.yaml': original });
+    const original = 'apply_to: lunch/app\nextends: base.yaml\n';
+    const editor = await openedApply({ 'base.yaml': 'actions: { enabled: false }', 'web.yaml': original });
     const setup = field(`security.${key}.state`);
 
     await editor.set(setup, 'configured');
@@ -1275,7 +1276,6 @@ test.each(['code_scanning_default_setup', 'code_quality_setup'])(
     expect(editor.unsavedChangesProblem.value).toContain('Actions');
     expect(editor.problemsBlockingSave.value.some((problem) => problem.message.includes('Actions'))).toBe(true);
     expect(editor.canSave.value).toBe(false);
-    expect(editor.canSaveAsDraft.value).toBe(true);
     await editor.save(write);
     expect(await readFile('/profiles/web.yaml', 'utf8')).toBe(original);
 
@@ -1329,13 +1329,4 @@ test('a problem in the profile file leads to its setting, its entry, or its own 
   ]);
   const unreadable = await opened({ 'other.yaml': 'labels: [42]\n' }, 'other.yaml');
   expect(names(unreadable)).toEqual([['configuration', 'labels.0']]);
-  // A base profile's entry is not the entry at the same position here.
-  const extending = await opened(
-    {
-      'base.yaml': 'labels: [{ name: x, color: nope }]\n',
-      'web.yaml': 'extends: base.yaml\nlabels: [{ name: bug, color: d73a4a }]\n',
-    },
-    'web.yaml',
-  );
-  expect(names(extending)[0]).toEqual(['configuration', 'labels.0.color']);
 });

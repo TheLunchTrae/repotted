@@ -21,12 +21,18 @@ function memory(): Preferences {
 }
 
 const base = 'repository:\n  has_wiki: false\nlabels:\n  - name: bug\n    color: d73a4a\n';
-const web = 'extends: ../base.yaml\nmerge:\n  allow_squash_merge: true\n';
+const rules = 'kind: ruleset\nrulesets:\n  - name: Main\n    enforcement: active\n';
+const web = 'references:\n  rulesets: [../rules.yaml]\nmerge:\n  allow_squash_merge: true\n';
 const site = 'merge:\n  allow_rebase_merge: false\n';
 
 function repository(): FakeGitRepository {
   const github = new FakeGitRepository();
-  github.write({ 'profiles/base.yaml': base, 'profiles/teams/web.yaml': web, 'profiles/site.yaml': site });
+  github.write({
+    'profiles/base.yaml': base,
+    'profiles/rules.yaml': rules,
+    'profiles/teams/web.yaml': web,
+    'profiles/site.yaml': site,
+  });
   return github;
 }
 
@@ -43,7 +49,7 @@ function ready(state: PreviewState): Extract<PreviewState, { kind: 'ready' }> {
   return state;
 }
 
-test('shows what a branch changes in each profile, including those that change only through their base', async () => {
+test('shows what a branch changes in each profile, including those that change only through a definition they reference', async () => {
   const github = repository();
   const { preview } = await setUp(github);
   github.write(
@@ -51,6 +57,7 @@ test('shows what a branch changes in each profile, including those that change o
       'profiles/base.yaml':
         'repository:\n  has_wiki: true\nlabels:\n  - name: bug\n    color: ffffff\n  - name: docs\n',
       'profiles/new.yaml': 'merge:\n  allow_squash_merge: false\n',
+      'profiles/rules.yaml': rules.replace('active', 'evaluate'),
       'profiles/site.yaml': null,
     },
     { branch: 'agent/wiki' },
@@ -70,10 +77,11 @@ test('shows what a branch changes in each profile, including those that change o
   expect(state.changedProfiles.map((profile) => [profile.path, profile.status])).toEqual([
     ['base.yaml', 'changed'],
     ['new.yaml', 'added'],
+    ['rules.yaml', 'changed'],
     ['site.yaml', 'removed'],
-    ['teams/web.yaml', 'through-base'],
+    ['teams/web.yaml', 'through-reference'],
   ]);
-  const [changed, added, removed, through] = state.changedProfiles;
+  const [changed, added, , removed, through] = state.changedProfiles;
   expect(changed?.sections).toEqual([
     {
       section: 'repository',
@@ -85,7 +93,7 @@ test('shows what a branch changes in each profile, including those that change o
           key: 'repository.has_wiki',
           before: 'Off',
           after: 'On',
-          fromExtendedProfile: undefined,
+          fromOtherFile: undefined,
         },
       ],
     },
@@ -99,7 +107,7 @@ test('shows what a branch changes in each profile, including those that change o
           key: 'color',
           before: 'd73a4a',
           after: 'ffffff',
-          fromExtendedProfile: undefined,
+          fromOtherFile: undefined,
         },
         {
           kind: 'adds',
@@ -107,7 +115,7 @@ test('shows what a branch changes in each profile, including those that change o
           key: 'new label',
           before: 'Not set',
           after: 'Added',
-          fromExtendedProfile: undefined,
+          fromOtherFile: undefined,
         },
       ],
     },
@@ -125,13 +133,9 @@ test('shows what a branch changes in each profile, including those that change o
     changedFileText: { before: site, after: '' },
   });
   expect(through?.changedFileText).toBeUndefined();
-  expect(through?.sections.flatMap((section) => section.rows.map((row) => [row.key, row.fromExtendedProfile]))).toEqual(
-    [
-      ['repository.has_wiki', 'base.yaml'],
-      ['color', 'base.yaml'],
-      ['new label', 'base.yaml'],
-    ],
-  );
+  expect(through?.sections.flatMap((section) => section.rows.map((row) => [row.key, row.fromOtherFile]))).toEqual([
+    ['enforcement', 'rules.yaml'],
+  ]);
   expect(through?.fileOnBranch).toBe(`${state.branchProfilesFolder}/teams/web.yaml`);
 });
 
@@ -142,7 +146,7 @@ test('follows a profile the branch moves, and says why one that no longer loads 
     {
       'profiles/site.yaml': null,
       'profiles/sites/site.yaml': site,
-      'profiles/teams/web.yaml': 'extends: ../gone.yaml\n',
+      'profiles/teams/web.yaml': 'references:\n  rulesets: [../gone.yaml]\n',
     },
     { branch: 'feature' },
   );
@@ -155,7 +159,7 @@ test('follows a profile the branch moves, and says why one that no longer loads 
   ]);
   expect(state.changedProfiles[0]?.sections).toEqual([]);
   expect(state.changedProfiles[1]?.problemOnBranch).toContain('gone.yaml');
-  expect(state.unchangedProfileCount).toBe(1);
+  expect(state.unchangedProfileCount).toBe(2);
 });
 
 test('says when the profiles here are older than the default branch, and how far behind the branch is', async () => {
@@ -181,7 +185,7 @@ test('notes a change to the shared preferences, which it does not show', async (
   expect(ready(preview.state.value)).toMatchObject({
     changesSharedPreferences: true,
     changedProfiles: [],
-    unchangedProfileCount: 3,
+    unchangedProfileCount: 4,
   });
 });
 
@@ -265,7 +269,10 @@ test('leaves out a profile broken alike on both sides, and names files by their 
   const github = repository();
   github.write({ 'profiles/bad.yaml': 'repository: { has_wiki: broken }\n' });
   const { preview } = await setUp(github);
-  github.write({ 'profiles/new.yaml': site, 'profiles/worse.yaml': 'extends: missing.yaml\n' }, { branch: 'feature' });
+  github.write(
+    { 'profiles/new.yaml': site, 'profiles/worse.yaml': 'references: { rulesets: [missing.yaml] }\n' },
+    { branch: 'feature' },
+  );
 
   await preview.open('feature');
   const state = ready(preview.state.value);
@@ -287,18 +294,21 @@ test('says when a profile that is broken on the default branch loads on the bran
   expect(fixed?.problemFixedByBranch).not.toContain('/preview');
 });
 
-test('refuses a profile on the branch that extends a file outside the profiles', async () => {
+test('refuses a profile on the branch that references a file outside the profiles', async () => {
   const github = repository();
   const { preview } = await setUp(github);
   await mkdir('/profiles/browser', { recursive: true });
-  await writeFile('/profiles/browser/secret.yaml', 'repository:\n  has_wiki: true\n');
-  github.write({ 'profiles/evil.yaml': 'extends: ../../../../profiles/browser/secret.yaml\n' }, { branch: 'feature' });
+  await writeFile('/profiles/browser/secret.yaml', rules);
+  github.write(
+    { 'profiles/evil.yaml': 'references: { rulesets: [../../../../profiles/browser/secret.yaml] }\n' },
+    { branch: 'feature' },
+  );
 
   await preview.open('feature');
   const [evil] = ready(preview.state.value).changedProfiles;
   expect(evil).toMatchObject({
     path: 'evil.yaml',
-    problemOnBranch: 'It extends a profile outside the profiles folder.',
+    problemOnBranch: 'It references a file outside the profiles folder.',
     sections: [],
   });
 });

@@ -271,8 +271,8 @@ test('an App that is not installed on the repository locks every difference and 
   expect(comparison.shown.value[0]?.rows[0]?.lockReason).toBe('Needs the GitHub App installed on this repository');
 });
 
-test('a failure names a base profile by its file beside the profile, not by where the browser keeps it', async () => {
-  await saved('extends: base.yaml\n');
+test('a failure names a definition it references by its file beside the profile, not by where the browser keeps it', async () => {
+  await saved('references: { rulesets: [base.yaml] }\n');
   const comparison = new Comparison(new FakeGitHub(), () => undefined);
 
   await comparison.compare('lunch/app', profile);
@@ -281,7 +281,7 @@ test('a failure names a base profile by its file beside the profile, not by wher
   expect(failure(comparison)).not.toContain('/profiles/');
 
   await mkdir('/profiles/teams', { recursive: true });
-  await writeFile('/profiles/teams/api.yaml', 'extends: ../base.yaml\n');
+  await writeFile('/profiles/teams/api.yaml', 'references: { rulesets: [../base.yaml] }\n');
   await comparison.compare('lunch/app', { file: '/profiles/teams/api.yaml', name: 'teams/api', folder: '/profiles' });
   expect(failure(comparison)).toContain('base.yaml');
   expect(failure(comparison)).not.toContain('/profiles/');

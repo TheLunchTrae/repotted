@@ -7,7 +7,7 @@ import { parse } from 'yaml';
 import { applyPlan } from '../../src/plan/apply.js';
 import { captureProfile } from '../../src/plan/capture.js';
 import { createPlan, OwnerMismatchError } from '../../src/plan/plan.js';
-import { changeOwnerType, ProfileError, resolveProfile } from '../../src/profiles/profile.js';
+import { changeOwnerType, ProfileError, resolveProfile, resolveProfilesTogether } from '../../src/profiles/profile.js';
 import { profile, profileFileJsonSchema } from '../../src/profiles/schema.js';
 import { createStagedApply } from '../../src/staging/staged.js';
 import { answered, FakeGitHub } from '../support/fake-github.js';
@@ -90,13 +90,13 @@ describe('a profile for one kind of owner', () => {
   });
 });
 
-describe('the owner type of a chain', () => {
-  test('comes from the nearest file that names one', async () => {
+describe('the owner type of profiles applied together', () => {
+  test('comes from the latest file that names one', async () => {
     const base = await write('any-base.yaml', 'repository: { has_wiki: false }\n');
-    const typed = await write('typed.yaml', `extends: ${base}\nowner_type: user\n`);
-    const below = await write('below.yaml', `extends: ${typed}\nrepository: { has_issues: true }\n`);
+    const typed = await write('typed.yaml', 'owner_type: user\n');
+    const below = await write('below.yaml', 'repository: { has_issues: true }\n');
 
-    const resolved = await resolveProfile(below);
+    const resolved = await resolveProfilesTogether([base, typed, below]);
 
     expect(resolved.profile.owner_type).toBe('user');
     expect(resolved.owner_source).toBe(typed);
@@ -105,12 +105,14 @@ describe('the owner type of a chain', () => {
 
   test('may not mix types', async () => {
     const base = await write('org-base.yaml', 'owner_type: organization\n');
-    const child = await write('mixed.yaml', `extends: ${base}\nowner_type: user\n`);
+    const child = await write('mixed.yaml', 'owner_type: user\n');
 
-    const error = await rejection(resolveProfile(child));
+    const error = await rejection(resolveProfilesTogether([base, child]));
 
     expect(error).toBeInstanceOf(ProfileError);
-    expect(String(error)).toContain('is for personal accounts, but it builds on');
+    expect(String(error)).toContain(
+      `${child} is for personal accounts, but ${base}, applied with it, is for organizations`,
+    );
   });
 
   test('checks draft settings against the type', async () => {
@@ -122,11 +124,11 @@ describe('the owner type of a chain', () => {
     expect(String(error)).toContain('at drafts.pages.public');
   });
 
-  test('checks what the chain sets against the type', async () => {
+  test('checks what they set together against the type', async () => {
     const base = await write('forks.yaml', 'repository: { allow_forking: true }\n');
-    const child = await write('forks-user.yaml', `extends: ${base}\nowner_type: user\n`);
+    const child = await write('forks-user.yaml', 'owner_type: user\n');
 
-    expect(String(await rejection(resolveProfile(child)))).toContain('allow_forking');
+    expect(String(await rejection(resolveProfilesTogether([base, child])))).toContain('allow_forking');
   });
 });
 
@@ -184,15 +186,12 @@ drafts:
     });
   });
 
-  test('puts the type at the top, after extends', async () => {
-    const base = await write('top-base.yaml', 'repository: { has_wiki: false }\n');
-    const file = await write('top.yaml', `extends: ${base}\nmerge: { allow_squash_merge: true }\n`);
+  test('puts the type at the top, above the comment over the first key', async () => {
+    const file = await write('top.yaml', '# Squash only\nmerge: { allow_squash_merge: true }\n');
 
     await changeOwnerType(file, 'user');
 
-    expect(await readFile(file, 'utf8')).toBe(
-      `extends: ${base}\nowner_type: user\nmerge: { allow_squash_merge: true }\n`,
-    );
+    expect(await readFile(file, 'utf8')).toBe('# Squash only\nowner_type: user\nmerge: { allow_squash_merge: true }\n');
   });
 
   test('drops self review with the last reviewer', async () => {
@@ -262,25 +261,25 @@ environments:
     expect(saved).toHaveProperty('repository', { allow_forking: true, has_wiki: false });
   });
 
-  test('stops when a base profile sets what the type does not have', async () => {
-    const base = await write('base-forks.yaml', 'repository: { allow_forking: true }\n');
-    const file = await write('child-forks.yaml', `extends: ${base}\nrepository: { has_wiki: false }\n`);
+  const pushRuleset = 'kind: ruleset\nrulesets: [{ name: Pushes, target: push }]\n';
+
+  test('stops when a definition it references sets what the type does not have', async () => {
+    const base = await write('base-pushes.yaml', pushRuleset);
+    const text = 'references: { rulesets: [base-pushes.yaml] }\nrepository: { has_wiki: false }\n';
+    const file = await write('child-pushes.yaml', text);
 
     const error = await rejection(changeOwnerType(file, 'user'));
 
     expect(error).toBeInstanceOf(ProfileError);
-    expect(String(error)).toContain(`because ${base}, which it builds on, sets repository.allow_forking`);
-    expect(await readFile(file, 'utf8')).toBe(`extends: ${base}\nrepository: { has_wiki: false }\n`);
+    expect(String(error)).toContain(`because ${base}, which it builds on, sets rulesets/Pushes`);
+    expect(await readFile(file, 'utf8')).toBe(text);
   });
 
-  test('goes ahead when the file overrides what a base sets', async () => {
-    const base = await write(
-      'base-org-parts.yaml',
-      'actions: { access_level: organization }\nrulesets: [{ name: Pushes, target: push }, { name: Tags, target: push }]\n',
-    );
+  test('goes ahead when the file overrides what a definition it references sets', async () => {
+    await write('base-org-parts.yaml', pushRuleset);
     const file = await write(
       'child-overrides.yaml',
-      `extends: ${base}\nactions: { access_level: none }\nrulesets: [{ name: Pushes, absent: true }, { name: Tags, target: tag }]\n`,
+      'references: { rulesets: [base-org-parts.yaml] }\nrulesets: [{ name: Pushes, target: tag }]\n',
     );
 
     const resolved = await changeOwnerType(file, 'user');
@@ -288,25 +287,31 @@ environments:
     expect(resolved.profile.owner_type).toBe('user');
   });
 
-  test('names the base when the file sets the same thing as it', async () => {
-    const base = await write('base-same.yaml', 'repository: { allow_forking: true }\n');
-    const file = await write('child-same.yaml', `extends: ${base}\nrepository: { allow_forking: false }\n`);
+  test('names the definition when the file sets the same thing as it', async () => {
+    const base = await write('base-same.yaml', pushRuleset);
+    const file = await write(
+      'child-same.yaml',
+      'references: { rulesets: [base-same.yaml] }\nrulesets: [{ name: Pushes, target: push, enforcement: evaluate }]\n',
+    );
 
     expect(String(await rejection(changeOwnerType(file, 'user')))).toContain(`because ${base}, which it builds on`);
   });
 
-  test('fixes a child that a base made invalid by changing it to any owner', async () => {
-    const base = await write('base-forking.yaml', 'repository: { allow_forking: true }\n');
+  test('fixes a profile that a definition it references made invalid by changing it to any owner', async () => {
+    await write('base-pushing.yaml', pushRuleset);
     const file = await write(
       'child-invalid.yaml',
-      `owner_type: user\nextends: ${base}\nrepository: { has_wiki: false }\n`,
+      'owner_type: user\nreferences: { rulesets: [base-pushing.yaml] }\nrepository: { has_wiki: false }\n',
     );
-    expect(String(await rejection(resolveProfile(file)))).toContain('allow_forking');
+    expect(String(await rejection(resolveProfile(file)))).toContain('push ruleset');
 
     const resolved = await changeOwnerType(file, undefined);
 
     expect(resolved.profile.owner_type).toBeUndefined();
-    expect(await readFile(file, 'utf8')).toBe(`extends: ${base}\nrepository: { has_wiki: false }\n`);
+    expect(parse(await readFile(file, 'utf8'))).toEqual({
+      references: { rulesets: ['base-pushing.yaml'] },
+      repository: { has_wiki: false },
+    });
   });
 
   test('drops a drafts.unset key that names what the change takes out', async () => {

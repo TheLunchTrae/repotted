@@ -1,5 +1,4 @@
 import { readFile, realpath } from 'node:fs/promises';
-import path from 'node:path';
 
 import { parse } from 'yaml';
 import { z } from 'zod';
@@ -109,7 +108,7 @@ function mergeSettings(
   }
 }
 
-/** A readable YAML file always opens, even when a base or its configuration is broken. */
+/** A readable YAML file always opens, even when its configuration or a definition it references is broken. */
 export async function readProfileForEditing(file: string, replacementText?: string): Promise<EditableProfile> {
   const original = replacementText ?? (await readFile(file, 'utf8'));
   let failure: unknown;
@@ -123,138 +122,82 @@ export async function readProfileForEditing(file: string, replacementText?: stri
     // The tolerant read below preserves known values and reports configuration errors by path.
   }
   const sources = emptySources();
-  const chain: string[] = [];
   const problems: ConfigurationProblem[] = [];
-  const layers: { readonly file: string; readonly data: Entry }[] = [];
-  let next: string | undefined = file;
-  while (next !== undefined) {
-    let resolved: string;
-    let text: string;
-    try {
-      resolved = await realpath(next);
-      text = layers.length === 0 ? original : await readFile(resolved, 'utf8');
-    } catch (error) {
-      if (layers.length === 0) {
-        throw error;
-      }
-      problems.push({ file: chain[0] ?? file, path: ['extends'], message: `Cannot read base profile ${next}` });
-      break;
-    }
-    if (chain.includes(resolved)) {
-      problems.push({ file: chain[0] ?? file, path: ['extends'], message: `Profile ${resolved} extends itself` });
-      break;
-    }
-    let parsed: unknown;
-    try {
-      parsed = parse(text) ?? {};
-    } catch (error) {
-      if (layers.length === 0) {
-        throw new ProfileError(`${resolved} is not valid YAML`, { cause: error });
-      }
-      problems.push({
-        file: resolved,
-        path: [],
-        message: 'The base profile is not valid YAML. Open it to correct its syntax.',
-      });
-      break;
-    }
-    const known = profileFields(parsed).known;
-    const data = isRecord(known) ? known : {};
-    chain.push(resolved);
-    layers.push({ file: resolved, data });
-    problems.push(...issues(profileFile, known, resolved));
-    const parent = data['extends'];
-    next = typeof parent === 'string' && parent !== '' ? path.resolve(path.dirname(resolved), parent) : undefined;
+  const resolved = await realpath(file);
+  let parsed: unknown;
+  try {
+    parsed = parse(original) ?? {};
+  } catch (error) {
+    throw new ProfileError(`${resolved} is not valid YAML`, { cause: error });
   }
+  const known = profileFields(parsed).known;
+  const data = isRecord(known) ? known : {};
+  problems.push(...issues(profileFile, known, resolved));
   const merged: Record<string, unknown> = {};
   const drafts: Drafts = {};
   const positions: EditableProfile['entryPositions'] = {};
   const draftPositions: EditableProfile['draftEntryPositions'] = {};
-  let owner: { readonly type: OwnerType; readonly file: string } | undefined;
-  for (const layer of layers.toReversed()) {
-    mergeSettings(merged, sources, layer.data, layer.file);
-    const type = layer.data['owner_type'];
-    if (type === 'user' || type === 'organization') {
-      if (owner !== undefined && owner.type !== type) {
-        problems.push({
-          file: layer.file,
-          path: ['owner_type'],
-          message: 'The owner type must match the base profile.',
-        });
-      }
-      owner = { type, file: layer.file };
-    }
-    const rawDrafts = layer.data['drafts'];
-    const validDrafts = !isRecord(rawDrafts)
-      ? {}
-      : Object.fromEntries(
-          Object.entries(rawDrafts).filter(([key, value]) => {
-            const field: unknown = Reflect.get(draftSettings.shape, key);
-            return field instanceof z.ZodType && field.safeParse(value).success;
-          }),
-        );
-    const parsedDrafts = draftSettings.safeParse(validDrafts);
-    if (parsedDrafts.success) {
-      const settings: Record<string, unknown> = { ...drafts };
-      mergeSettings(settings, sources.drafts, parsedDrafts.data, layer.file);
-      Object.assign(drafts, settings);
-      if (parsedDrafts.data.unset !== undefined) {
-        drafts.unset = parsedDrafts.data.unset;
-        for (const key of drafts.unset) {
-          sources.drafts.unset[key] = layer.file;
-        }
+  mergeSettings(merged, sources, data, resolved);
+  const type = data['owner_type'];
+  const owner: { readonly type: OwnerType; readonly file: string } | undefined =
+    type === 'user' || type === 'organization' ? { type, file: resolved } : undefined;
+  const rawDrafts = data['drafts'];
+  const validDrafts = !isRecord(rawDrafts)
+    ? {}
+    : Object.fromEntries(
+        Object.entries(rawDrafts).filter(([key, value]) => {
+          const field: unknown = Reflect.get(draftSettings.shape, key);
+          return field instanceof z.ZodType && field.safeParse(value).success;
+        }),
+      );
+  const parsedDrafts = draftSettings.safeParse(validDrafts);
+  if (parsedDrafts.success) {
+    const settings: Record<string, unknown> = {};
+    mergeSettings(settings, sources.drafts, parsedDrafts.data, resolved);
+    Object.assign(drafts, settings);
+    if (parsedDrafts.data.unset !== undefined) {
+      drafts.unset = parsedDrafts.data.unset;
+      for (const key of drafts.unset) {
+        sources.drafts.unset[key] = resolved;
       }
     }
-    for (const list of lists) {
-      const raw = layer.data[list];
-      const own = Array.isArray(raw) ? raw : [];
-      const applying = own.flatMap((entry, index) =>
-        isRecord(entry) && entry['draft'] !== true ? [{ entry, index }] : [],
-      );
-      const before = merged[list];
-      const base = Array.isArray(before) ? before.filter(isRecord) : [];
-      const overrides = new Set(applying.map(({ entry }) => nameOf(list, entry)));
-      const kept = base.filter((entry) => !overrides.has(nameOf(list, entry)));
-      if (raw !== undefined || base.length > 0) {
-        merged[list] = [...kept, ...applying.map(({ entry }) => entry)];
-        positions[list] = [
-          ...kept.map(() => undefined),
-          ...applying.map(({ index }) => (layer.file === chain[0] ? index : undefined)),
-        ];
-      }
-      for (const { entry } of applying) {
-        sources[list][nameOf(list, entry)] = layer.file;
-      }
-      // Draft entries already accept unfinished values; only their identity is required here.
-      const ownDrafts = own.flatMap((entry, index) =>
-        isRecord(entry) && entry['draft'] === true
-          ? [
-              {
-                entry: { ...entry, name: typeof entry['name'] === 'string' ? entry['name'] : '', draft: true as const },
-                index,
-              },
-            ]
-          : [],
-      );
-      if (list !== 'autolinks' && ownDrafts.length > 0) {
-        const keptDrafts = (drafts[list] ?? []).filter(
-          (entry) => !ownDrafts.some((ownEntry) => nameOf(list, ownEntry.entry) === nameOf(list, entry)),
-        );
-        drafts[list] = [...keptDrafts, ...ownDrafts.map(({ entry }) => entry)];
-        draftPositions[list] = [
-          ...keptDrafts.map(() => undefined),
-          ...ownDrafts.map(({ index }) => (layer.file === chain[0] ? index : undefined)),
-        ];
-        for (const { entry } of ownDrafts) {
-          sources.drafts[list][nameOf(list, entry)] = layer.file;
-        }
+  }
+  for (const list of lists) {
+    const raw = data[list];
+    const own = Array.isArray(raw) ? raw : [];
+    const applying = own.flatMap((entry, index) =>
+      isRecord(entry) && entry['draft'] !== true ? [{ entry, index }] : [],
+    );
+    if (raw !== undefined) {
+      merged[list] = applying.map(({ entry }) => entry);
+      positions[list] = applying.map(({ index }) => index);
+    }
+    for (const { entry } of applying) {
+      sources[list][nameOf(list, entry)] = resolved;
+    }
+    // Draft entries already accept unfinished values; only their identity is required here.
+    const ownDrafts = own.flatMap((entry, index) =>
+      isRecord(entry) && entry['draft'] === true
+        ? [
+            {
+              entry: { ...entry, name: typeof entry['name'] === 'string' ? entry['name'] : '', draft: true as const },
+              index,
+            },
+          ]
+        : [],
+    );
+    if (list !== 'autolinks' && ownDrafts.length > 0) {
+      drafts[list] = ownDrafts.map(({ entry }) => entry);
+      draftPositions[list] = ownDrafts.map(({ index }) => index);
+      for (const { entry } of ownDrafts) {
+        sources.drafts[list][nameOf(list, entry)] = resolved;
       }
     }
   }
   if (owner !== undefined) {
     merged['owner_type'] = owner.type;
   }
-  const finalProblems = issues(profile, merged, chain[0] ?? file).map((problem) => {
+  const finalProblems = issues(profile, merged, resolved).map((problem) => {
     const [section, key, inner] = problem.path;
     const settings = settingsSections.find((known) => known === section);
     const source =
@@ -274,12 +217,10 @@ export async function readProfileForEditing(file: string, replacementText?: stri
   );
   if (unique.length === 0 && failure instanceof ProfileError) {
     unique.push(
-      ...(failure.problems.length === 0
-        ? [{ file: chain[0] ?? file, path: [], message: failure.message }]
-        : failure.problems),
+      ...(failure.problems.length === 0 ? [{ file: resolved, path: [], message: failure.message }] : failure.problems),
     );
   }
-  const declaredReferences = layers[0]?.data['references'];
+  const declaredReferences = data['references'];
   const references: Record<string, unknown> = {};
   const referencePath = z.string().min(1);
   if (isRecord(declaredReferences)) {
@@ -291,7 +232,7 @@ export async function readProfileForEditing(file: string, replacementText?: stri
     }
   }
   return {
-    chain,
+    chain: [resolved],
     profile: { ...merged, ...(owner === undefined ? {} : { owner_type: owner.type }) },
     drafts,
     sources,

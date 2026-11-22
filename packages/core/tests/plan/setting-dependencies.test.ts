@@ -323,19 +323,15 @@ test('uses live dependencies when omitted, and honors a profile that enables the
   expect((await createPlan(github, repo, enabled)).changes).toHaveLength(6);
 });
 
-test('saving removes inactive settings from the edited YAML and preserves drafts, comments, and base files', async () => {
+test('saving removes inactive settings from the edited YAML and preserves drafts and comments', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'repotted-dependencies-'));
   try {
-    const base = path.join(directory, 'base.yaml');
     const file = path.join(directory, 'profile.yaml');
-    const baseText = 'merge: { allow_merge_commit: false }\n';
-    await writeFile(base, baseText);
     await writeFile(
       file,
       `# Team profile
-extends: base.yaml
 repository: { has_wiki: true } # Keep the wiki
-merge: { merge_commit_title: PR_TITLE, merge_commit_message: BLANK }
+merge: { allow_merge_commit: false, merge_commit_title: PR_TITLE, merge_commit_message: BLANK }
 actions: { enabled: true, allowed_actions: selected, selected_actions: { verified_allowed: true } }
 drafts:
   actions: { selected_actions: { patterns_allowed: ['octo-org/*'] } }
@@ -349,7 +345,6 @@ drafts:
     expect(text).not.toContain('merge_commit_');
     expect(text).toContain('# Team profile');
     expect(text).toContain('# Keep the wiki');
-    expect(await readFile(base, 'utf8')).toBe(baseText);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

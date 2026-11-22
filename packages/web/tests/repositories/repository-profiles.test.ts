@@ -54,11 +54,10 @@ async function profiles(texts: Readonly<Record<string, string>>): Promise<Signal
   return signal(await listProfiles(folder));
 }
 
-test('a shared environment edit marks direct and transitive assignments changed without writing GitHub', async () => {
+test('a shared environment edit marks the definition and the profiles that reference it changed without writing GitHub', async () => {
   const listings = await profiles({
     'production.yaml': 'kind: environment\nenvironments: [{ name: production, wait_timer: 5 }]\n',
-    'base.yaml': 'references: { environments: [./production.yaml] }\n',
-    'service.yaml': 'extends: ./base.yaml\nrepository: { has_wiki: false }\n',
+    'service.yaml': 'references: { environments: [./production.yaml] }\nrepository: { has_wiki: false }\n',
   });
   const preferences = store();
   const assignments = new RepositoryProfiles(preferences, { listings, folder: signal(folder) });
@@ -221,7 +220,7 @@ test('a batch reviews folder then own layers and records only complete successfu
   const listings = await profiles({
     'base.yaml': 'repository: { has_wiki: false }\n',
     'node.yaml': 'repository: { has_projects: false }\n',
-    'web.yaml': 'extends: base.yaml\nrepository: { has_wiki: true }\n',
+    'web.yaml': 'repository: { has_wiki: true }\n',
   });
   const names = ['lunch/app', 'lunch/api', 'lunch/web'];
   const preferences = store({
@@ -560,7 +559,7 @@ test('a profile that stops resolving after it was listed shows as unreadable, no
   const listings = await profiles(twoProfiles);
   const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
   assignments.setProfiles('lunch/app', ['base.yaml', 'node.yaml']);
-  await writeFile(`${folder}/node.yaml`, 'extends: gone.yaml\n');
+  await writeFile(`${folder}/node.yaml`, 'references: { rulesets: [gone.yaml] }\n');
 
   await assignments.check();
 
@@ -1070,11 +1069,10 @@ test('assignment ownership syncs with config preferences and reloads changes mad
   expect(assignments.authoritativeOf('lunch/api')).toEqual(['environments']);
 });
 
-test('transitive reusable edits change assignment status and missing definitions block authoritative review', async () => {
+test('reusable edits change assignment status and missing definitions block authoritative review', async () => {
   const listings = await profiles({
     'policy.yaml': 'kind: actions-policy\nactions_policies: [{ name: Release, enforcement: active }]\n',
-    'base.yaml': 'references: { actions_policies: [policy.yaml] }\n',
-    'service.yaml': 'extends: base.yaml\n',
+    'service.yaml': 'references: { actions_policies: [policy.yaml] }\n',
   });
   const assignments = new RepositoryProfiles(store(), { listings, folder: signal(folder) });
   assignments.setProfiles('lunch/app', ['service.yaml'], ['rulesets']);

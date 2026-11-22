@@ -4,7 +4,6 @@ import {
   captureDefinition,
   stringifyDefinition,
   checkActionPatterns,
-  declaredExtends,
   type DefinitionKind,
   parseProfile,
   withRewrittenReferences,
@@ -17,7 +16,6 @@ import {
   readInstallationSettingsUrl,
   stringifyProfile,
   syncFolder,
-  withExtends,
 } from '@repotted/core';
 import * as z from 'zod/mini';
 
@@ -59,7 +57,6 @@ export type SyncState =
 
 export type NewProfileStart =
   | { readonly kind: 'empty' }
-  | { readonly kind: 'extends'; readonly base: ProfileListing }
   | { readonly kind: 'repository'; readonly repository: string }
   | { readonly kind: 'duplicate'; readonly source: ProfileListing }
   | { readonly kind: 'import'; readonly text: string };
@@ -71,7 +68,7 @@ export interface NewProfile {
   /** From the profiles folder; '' for the profiles folder itself. */
   readonly folder: string;
   readonly start: NewProfileStart;
-  /** A capture takes the repository's owner type, and a profile that extends a typed one takes that type. */
+  /** A capture takes the repository's owner type. */
   readonly ownerType: OwnerType | undefined;
 }
 
@@ -668,12 +665,7 @@ export class Profiles {
       try {
         const source = profile.start.source.file;
         const original = await readFile(source, 'utf8');
-        const base = declaredExtends(original);
-        text =
-          base === undefined
-            ? original
-            : withExtends(original, relative(dirname(file), resolve(dirname(source), base)));
-        text = withRewrittenReferences(text, (reference) =>
+        text = withRewrittenReferences(original, (reference) =>
           relative(dirname(file), resolve(dirname(source), reference)),
         );
       } catch (error) {
@@ -682,18 +674,11 @@ export class Profiles {
     } else if (profile.start.kind === 'import') {
       text = profile.start.text;
     } else {
-      if (profile.definitionKind !== undefined && profile.start.kind === 'extends') {
-        return 'A reusable definition cannot extend a profile.';
-      }
       const owner = profile.ownerType === undefined ? '' : `owner_type: ${profile.ownerType}\n`;
       text =
-        profile.start.kind === 'empty'
-          ? definition === undefined
-            ? owner
-            : `kind: ${definition.kind}\n${owner}${stringifyProfile({ [definition.section]: [{ name: targetName }] })}`
-          : `extends: ${JSON.stringify(relative(dirname(file), profile.start.base.file))}\n${
-              profile.start.base.owner_type === null ? owner : ''
-            }`;
+        definition === undefined
+          ? owner
+          : `kind: ${definition.kind}\n${owner}${stringifyProfile({ [definition.section]: [{ name: targetName }] })}`;
     }
     return this.#work(async () => {
       // A capture whose form closed makes nothing. A profile asked for outright is made even so.
@@ -739,31 +724,21 @@ export class Profiles {
     });
   }
 
-  /** Directly or through another: they stop loading without these profiles. */
+  /** The profiles that stop loading without these definitions, counting the unsaved references of open editors. */
   dependents(...listings: readonly ProfileListing[]): readonly ProfileListing[] {
     const gone = new Set(listings.map((listing) => listing.file));
-    const found = new Set<string>(gone);
+    const found = new Set<string>();
     for (const editor of this.#editors.value) {
       const references = Object.values(editor.references.value).flatMap((value) =>
         typeof value === 'string' ? [value] : (value ?? []),
       );
-      if (
-        !gone.has(editor.file) &&
-        references.some((reference) => found.has(resolve(dirname(editor.file), reference)))
-      ) {
+      if (references.some((reference) => gone.has(resolve(dirname(editor.file), reference)))) {
         found.add(editor.file);
       }
     }
-    for (let grew = true; grew;) {
-      grew = false;
-      for (const other of this.listings.value) {
-        if (
-          [other.extends, ...(other.references ?? [])].some((source) => source !== null && found.has(source)) &&
-          !found.has(other.file)
-        ) {
-          found.add(other.file);
-          grew = true;
-        }
+    for (const other of this.listings.value) {
+      if ((other.references ?? []).some((source) => gone.has(source))) {
+        found.add(other.file);
       }
     }
     return this.listings.value.filter((other) => !gone.has(other.file) && found.has(other.file));
@@ -910,7 +885,7 @@ export class Profiles {
 
   /**
    * Moves the files named in the plan, from their file to where they go,
-   * and points every `extends` that names a moved file at its new place, so
+   * and points every reference that names a moved file at its new place, so
    * nothing stops loading. The plan is made in the turn, from the list as
    * the turns before this one left it. A write that fails takes back those
    * before it, so nothing is half moved.
@@ -967,20 +942,14 @@ export class Profiles {
       for (const from of listed.keys()) {
         const to = moves.get(from) ?? from;
         const before = await readFile(from, 'utf8');
-        const declared = declaredExtends(before);
-        const base = declared === undefined ? undefined : resolve(dirname(from), declared);
-        const baseNow = base === undefined ? undefined : (moves.get(base) ?? base);
-        const stillPointed = declared === undefined || resolve(dirname(to), declared) === baseNow;
-        const extended =
-          stillPointed || baseNow === undefined ? before : withExtends(before, relative(dirname(to), baseNow));
-        const text = withRewrittenReferences(extended, (reference) => {
+        const text = withRewrittenReferences(before, (reference) => {
           const target = resolve(dirname(from), reference);
           return relative(dirname(to), moves.get(target) ?? target);
         });
         if (to !== from) {
           moved.push({ from, to, text });
         } else if (text !== before) {
-          // An open editor holds the file as it was read, so a save would put the old `extends` back.
+          // An open editor holds the file as it was read, so a save would put the old references back.
           if (this.unsaved.value.has(from)) {
             return `Save or reset the changes to ${listed.get(from)?.name ?? basename(from)} first.`;
           }
@@ -1296,7 +1265,7 @@ export class Profiles {
     } catch (error) {
       this.listingError.value = messageOf(error);
     }
-    // Each editor reads its profile again, since a sync may have changed it or one it extends,
+    // Each editor reads its profile again, since a sync may have changed it or a definition it references,
     // and lays its unsaved changes over what it finds. An editor whose profile is gone goes too.
     const listed = new Set(this.listings.value.map((listing) => listing.file));
     this.#editors.value = this.#editors.value.filter((editor) => listed.has(editor.file));

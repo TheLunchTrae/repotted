@@ -11,7 +11,7 @@ import { createPlan } from '../../src/plan/plan.js';
 import { actionsEndpoints } from '../../src/plan/sections/actions.js';
 import { repositoryEndpoints } from '../../src/plan/sections/repository.js';
 import { securityEndpoints } from '../../src/plan/sections/security.js';
-import { editProfile, parseProfile, resolveProfile, stringifyProfile } from '../../src/profiles/profile.js';
+import { editProfile, parseProfile, resolveProfilesTogether, stringifyProfile } from '../../src/profiles/profile.js';
 import { profile as profileSchema, type Profile } from '../../src/profiles/schema.js';
 import { answered, FakeGitHub, type FakeState } from '../support/fake-github.js';
 
@@ -577,7 +577,6 @@ describe('profiles of every section', () => {
         '',
       ].join('\n'),
       'own.yaml': [
-        'extends: base.yaml',
         'security:',
         '  code_scanning_default_setup: { query_suite: default }',
         'pages: { absent: true }',
@@ -589,7 +588,7 @@ describe('profiles of every section', () => {
     const own = path.join(dir, 'own.yaml');
     const base = path.join(dir, 'base.yaml');
 
-    const resolved = await resolveProfile(own);
+    const resolved = await resolveProfilesTogether([base, own]);
     expect(resolved.profile.security).toEqual({
       code_scanning_default_setup: { state: 'configured', query_suite: 'default' },
     });
@@ -827,7 +826,7 @@ describe('settings GitHub ties together', () => {
     expect(next.warnings).toEqual([]);
   });
 
-  test('plans no runner for a setup that is not configured, even one a base profile names', async () => {
+  test('plans no runner for a setup that is not configured, even one an earlier profile names', async () => {
     const github = new FakeGitHub(everySettingOfferedAtGitHubDefaults());
     // As GitHub reports it while not configured.
     github.state.settings['/code-quality/setup'] = { state: 'not-configured', runner_type: null, runner_label: null };
@@ -836,11 +835,8 @@ describe('settings GitHub ties together', () => {
       path.join(dir, 'base.yaml'),
       'security:\n  code_quality_setup: { state: configured, runner_type: standard }\n',
     );
-    await writeFile(
-      path.join(dir, 'own.yaml'),
-      'extends: base.yaml\nsecurity:\n  code_quality_setup: { state: not-configured }\n',
-    );
-    const { profile } = await resolveProfile(path.join(dir, 'own.yaml'));
+    await writeFile(path.join(dir, 'own.yaml'), 'security:\n  code_quality_setup: { state: not-configured }\n');
+    const { profile } = await resolveProfilesTogether([path.join(dir, 'base.yaml'), path.join(dir, 'own.yaml')]);
     expect(profile.security?.code_quality_setup).toEqual({ state: 'not-configured', runner_type: 'standard' });
 
     const plan = await createPlan(github, repo, profile);

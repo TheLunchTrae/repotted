@@ -796,7 +796,7 @@ export class Comparison {
           repository,
           file: profile.file,
           profileName: profile.name,
-          // The profile goes by its name, and a base profile by its path among the profiles, not by where the browser keeps them.
+          // The profile goes by its name, and a file it references by its path among the profiles, not by where the browser keeps them.
           message: (error instanceof Error ? error.message : String(error))
             .replaceAll(profile.file, profile.name)
             .replaceAll(`${profile.folder ?? dirname(profile.file)}/`, ''),

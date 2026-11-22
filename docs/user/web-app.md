@@ -500,7 +500,7 @@ batch, and the repositories keep no record of the change.
 
 A profile is a YAML file that describes how a repository should be set up.
 The **Profiles** page lists every profile, under where they are kept, with
-what owns the repositories each is for and which profile it extends. Type in
+what owns the repositories each is for. Type in
 **Find a profile** to narrow the list. Folders show above the profiles that
 are in none, with the number of profiles in each, and a folder inside
 another shows under it; click a folder's name to close or open it. Folders
@@ -510,7 +510,7 @@ that aren't saved is marked **Not saved**.
 
 Click a profile to open it. It takes the whole page, and **All profiles**
 above it returns to the list where you left it. The
-page says what owns the repositories it is for and which profile it extends.
+page says what owns the repositories it is for.
 **Show YAML** shows the profile's file as it is saved; it starts hidden.
 
 ### Organize profiles
@@ -532,13 +532,13 @@ while a profile is in it, so a new folder starts with the profiles you move
 into it. To rename a folder, use its **Edit** menu; every profile in it, and
 in the folders inside it, moves with it.
 
-A move changes where the profiles' files are. Every profile that extends one
-of them, and every moved profile that extends another, is pointed at the new
-place in the same change, so nothing stops loading. When your profiles are
-kept on GitHub, the move is one commit, and the files keep their names and
-the rest of their text. Repotted says why and moves nothing when a profile
-doesn't load, since what it extends is unknown; when a profile that would
-move or be pointed elsewhere has changes that aren't saved; when a profile of
+A move changes where the profiles' files are. Every reference to a moved
+reusable definition, and every reference a moved profile makes, is pointed at
+the new place in the same change, so nothing stops loading. When your
+profiles are kept on GitHub, the move is one commit, and the files keep their
+names and the rest of their text. Repotted says why and moves nothing when a
+profile doesn't load, since what it references is unknown; when a profile
+that would move or be pointed elsewhere has changes that aren't saved; when a profile of
 the same name, in any case, is already where one would go; when a folder's
 name matches a profile's file in any case, or another folder's in another
 case; or when a rename would land on a folder that's already there. A
@@ -561,8 +561,8 @@ is separate from **New Actions policy**, **New ruleset**, and **New environment*
 which create named items in the profile. A profile can reference several
 Actions policies, rulesets, and environments. **Edit shared definition** opens the original in
 its library. **Remove** detaches the reference, and **Save** keeps reference
-edits with the profile's other changes. References inherited from a base are
-changed in that base. Inline entries replace shared entries of the same name.
+edits with the profile's other changes. In an apply's edits, references that come
+from a listed profile are changed in that profile. Inline entries replace shared entries of the same name.
 
 Reference changes preview the resolved entries before saving. Save those
 changes before editing the entries. Create a profile first, then choose
@@ -598,8 +598,6 @@ from:
 
 - **Nothing**: an empty profile, which manages nothing until you set
   something.
-- **Another profile**: the new profile extends the one you pick, so it gets
-  every setting the other one sets.
 - **A repository**: Repotted reads the repository's settings, rulesets,
   environments, and labels as they are on GitHub now, and saves them as a
   profile. Capturing only reads from GitHub. The profile appears only once
@@ -612,8 +610,8 @@ from:
 
 When there are folders, **Folder** chooses where the profile goes. Under
 **For repositories owned by**, choose **Personal accounts**,
-**Organizations**, or **Any owner**. A profile that extends one with a type
-has that type, and a captured profile has the repository's owner type.
+**Organizations**, or **Any owner**. A captured profile has the repository's
+owner type.
 [Owner type](profiles.md#owner-type) describes what each type takes.
 
 Repotted never replaces a profile that is already there, whatever the case of
@@ -626,13 +624,14 @@ configuration is invalid. Errors appear on the affected fields or areas and
 in the save problems list. The notice above the settings lists each error by
 the setting or entry it is in, as **Wiki in Repository**, and each name goes
 to that setting, as **Go to it** does. Correct the values in the forms, or use **Remove
-invalid configuration** for a malformed area. Errors in a base profile name
-the file to open. Unknown keys are ignored on load and removed from this file
+invalid configuration** for a malformed area, such as an `extends` line,
+which a profile can't have. Errors in a reusable definition it references
+name the file to open. Unknown keys are ignored on load and removed from this file
 when saving. Saving also sets a ruleset bypass actor ID that GitHub ignores,
 such as an organization owner's, to the one GitHub keeps, and the preview
 names each ruleset this changes. **Save** is available for removing unknown
 keys alone; loading changes no files. **Save** checks the corrected profile
-and its bases before writing.
+and what it references before writing.
 
 If the YAML syntax is invalid, the page offers **Profile YAML** under **Fix
 the profile**. Correct the syntax there; **Save** stays off until the YAML
@@ -681,14 +680,14 @@ organizations marks the Enterprise Cloud ones. **Change** beside it
 picks another [owner type](profiles.md#owner-type). Before anything is
 written, it lists what the profile sets that the new type doesn't have, since
 changing the type stops the profile managing those. It waits until you have
-saved or reset your changes. When the type comes from a base profile, change
-it in that profile.
+saved or reset your changes. When the type comes from a reusable definition
+the profile references, change it in that definition.
 
 **Find a setting** above the tabs searches every settings tab at once. Type
 part of a setting's name, its key in a profile such as `allow_squash_merge`,
 or a word people know it by, such as "dco" for sign-off. **Managed** shows
-only the settings that have a value once you save, from the profile or a
-base profile, **Not saved yet** only those with a change you haven't saved,
+only the settings that have a value once you save, from the file or, in an
+apply's edits, from a profile it starts from, **Not saved yet** only those with a change you haven't saved,
 and **Drafts**, on a profile with a draft, only those in it. The settings
 found show in place of the tabs, each under its tab's and group's name, and
 stay while you edit them, until you save or search again. **Show every
@@ -696,17 +695,17 @@ setting** goes back to the tabs. Rulesets, environments, and labels are not
 searched; they stay on their own tabs.
 
 A profile manages only what it names. A setting that says **Not managed**
-keeps whatever value each repository has. When a profile extends another,
-each setting says which profile it comes from, and setting it here overrides
-the base profile. To stop setting a value in this profile, click **Remove**
-beside it; if a base profile sets it, the base's value applies again.
+keeps whatever value each repository has. In an apply's edits, each setting
+says which profile it comes from, and setting it here overrides that profile
+for the apply. To stop setting a value here, click **Remove** beside it; in
+an apply's edits, the profile's value applies again.
 
 Each group of settings, such as **Code scanning**, has **Reset all** beside
 its heading while any of its settings has a change you haven't saved, and
 **Remove all** while the profile itself sets any of them. Each says how many
 settings it changes. **Remove all** also counts the settings GitHub hides
 for the value of one above them, which have no **Remove** of their own;
-settings a base profile sets aren't counted. Neither saves anything, and
+settings a profile an apply starts from sets aren't counted. Neither saves anything, and
 **Undo** under the heading brings back exactly what was there, until you
 change anything else, save, reset, or the profile is read again after a
 sync. On a phone the actions sit beside the group's heading and wrap when
@@ -732,8 +731,7 @@ the settings it turns off, which are highlighted below it. Click **Remove**
 to choose the value, or **Cancel** to keep the one it had. Any other change
 withdraws the question. Afterwards the setting lists the ones that saving
 removes, with **Undo** while the change isn't saved. Only settings the open
-profile's own file names count, since a save leaves a base profile's file as
-it is. In an apply's edits, the question is **Skip**, and it counts every
+profile's own file names count. In an apply's edits, the question is **Skip**, and it counts every
 setting with a value, since the apply skips them.
 
 On the **Actions** tab, with **Allowed actions** set to **Selected**,
@@ -821,7 +819,8 @@ Under **New Actions policy**, **New ruleset**, **New environment**, or **New lab
 puts every entry in the list with a change you haven't saved back as it was,
 **Take out all** takes out every entry the profile names, along with new
 ones, and **Put all back** puts back every entry that is taken out. An entry
-from a base profile can't be taken out. As with a group of settings, each
+from a reusable definition, or from a profile an apply starts from, can't be
+taken out. As with a group of settings, each
 says how many it changes, and **Undo** brings the list back as it was.
 Select entries with the box beside each, or **Select all**, and the actions
 change only those: **Reset**, **Take out**, and **Put back**. **Deselect
@@ -875,8 +874,8 @@ doesn't save over that change: **Keep mine** saves your version over it, and
 GitHub knows rulesets and environments by name. If you rename one, applying
 the profile creates a new one with the new name and leaves the old one on the
 repository, and the form says so. You can rename only an entry that this
-profile names on its own; one from a base profile keeps its name, and
-changing it here overrides the base profile's.
+file names on its own; one from a reusable definition, or from a profile an
+apply starts from, keeps its name, and changing it here overrides that one.
 
 In a label's form, pick one of GitHub's colors or type six hex digits; an
 empty color leaves each repository's own. An empty description clears each
@@ -895,10 +894,7 @@ resets unsaved edits; edit that draft entry or use **Discard draft**.
 ### Delete a profile
 
 Open the profile and click **Delete profile**, or select profiles in the list
-and click **Delete** in the panel. Repotted asks first, naming the files. If
-other profiles extend them, directly or through another profile, the
-question names those: they stop loading until you point them at another
-profile, but nothing stops you. A profile in the browser can't be brought
+and click **Delete** in the panel. Repotted asks first, naming the files. A profile in the browser can't be brought
 back. When your profiles are kept on GitHub, the deletion is one commit, so
 the repository's history keeps the files as they were at the last sync.
 
@@ -997,9 +993,10 @@ branch, or type its name. The address of a preview is
 
 The preview lays the branch's changes over your profiles and lists each
 profile that would apply something different: one the branch adds, deletes,
-moves, or changes, and one whose own file is the same but whose base
-profile changes. Each row shows the value on the default branch and on the
-branch, and names the base profile it comes from. **Show YAML** shows the
+moves, or changes, and one whose own file is the same but a reusable
+definition it references changes, marked **Changed by a shared definition**.
+Each row shows the value on the default branch and on the branch, and names
+the definition it comes from. **Show YAML** shows the
 file's own lines that change, and **Compare with a repository** compares
 the branch's version of a profile with a repository, as
 [Compare a repository with a profile](#compare-a-repository-with-a-profile)
@@ -1014,7 +1011,7 @@ aren't synced, which the preview would show as undone by the branch, and
 when the profiles are older than the default branch. Sync, then refresh, to
 leave both out. A banner also says when the branch is behind the default
 branch, where a profile both changed shows as the branch has it. A profile on
-the branch that extends a file outside the profiles folder doesn't load.
+the branch that references a file outside the profiles folder doesn't load.
 Changes the branch makes to hidden repositories and folders aren't shown.
 
 ### Keep profiles in a folder on this computer

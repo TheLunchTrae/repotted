@@ -49,7 +49,7 @@ async function syncFailureMessage(promise: Promise<unknown>): Promise<string> {
 }
 
 const base = 'repository:\n  has_wiki: false\n';
-const app = 'extends: base.yaml\nmerge:\n  allow_squash_merge: true\n';
+const app = 'merge:\n  allow_squash_merge: true\n';
 
 describe('syncFolder', () => {
   test('pulls only the profiles, from the folder it names, into a folder that lists them', async () => {
@@ -57,7 +57,7 @@ describe('syncFolder', () => {
     github.write({
       'profiles/base.yaml': base,
       'profiles/app.yml': app,
-      'profiles/team/web.yaml': 'extends: ../base.yaml\n',
+      'profiles/team/web.yaml': 'labels: [{ name: bug }]\n',
       'profiles/README.md': '# Profiles\n',
       'profiles/.hidden.yaml': base,
       'other.yaml': base,
@@ -78,7 +78,7 @@ describe('syncFolder', () => {
     expect(await profileTextsByPath(local)).toEqual({
       'base.yaml': base,
       'app.yml': app,
-      'team/web.yaml': 'extends: ../base.yaml\n',
+      'team/web.yaml': 'labels: [{ name: bug }]\n',
     });
     expect((await listProfiles(local)).map((listing) => [listing.folder, listing.name, listing.problem])).toEqual([
       ['', 'app', null],
@@ -187,48 +187,6 @@ describe('syncFolder', () => {
     await syncFolder(github, local);
 
     expect(github.log()[0]).toBe('Rename profile: app to web; move profile: base to shared/base');
-  });
-
-  test('names an override moved across folder depths while preserving its base', async () => {
-    const github = new FakeGitRepository();
-    github.write({ 'base.yaml': base, 'teams/web.yaml': 'extends: ../base.yaml\n' });
-    const local = await folder();
-    await syncFolder(github, local, { repository: 'lunch/config' });
-
-    await rm(path.join(local, 'teams', 'web.yaml'));
-    await writeFile(path.join(local, 'web.yaml'), 'extends: base.yaml\n');
-    await writeFile(path.join(local, 'base.yaml'), 'repository:\n  has_wiki: true\n');
-    await syncFolder(github, local);
-
-    expect(github.log()[0]).toBe('Update profile: base; move profile: teams/web to web');
-  });
-
-  test('follows a base moved alongside an override with a rewritten extends', async () => {
-    const github = new FakeGitRepository();
-    github.write({ 'base.yaml': base, 'teams/web.yaml': 'extends: ../base.yaml\n' });
-    const local = await folder();
-    await syncFolder(github, local, { repository: 'lunch/config' });
-
-    await mkdir(path.join(local, 'shared'));
-    await rename(path.join(local, 'base.yaml'), path.join(local, 'shared', 'base.yaml'));
-    await rm(path.join(local, 'teams', 'web.yaml'));
-    await writeFile(path.join(local, 'web.yaml'), 'extends: shared/base.yaml\n');
-    await syncFolder(github, local);
-
-    expect(github.log()[0]).toBe('Move profiles: base to shared/base, teams/web to web');
-  });
-
-  test('does not pair an override with a different base as a move', async () => {
-    const github = new FakeGitRepository();
-    github.write({ 'base.yaml': base, 'other.yaml': base, 'teams/web.yaml': 'extends: ../base.yaml\n' });
-    const local = await folder();
-    await syncFolder(github, local, { repository: 'lunch/config' });
-
-    await rm(path.join(local, 'teams', 'web.yaml'));
-    await writeFile(path.join(local, 'web.yaml'), 'extends: other.yaml\n');
-    await syncFolder(github, local);
-
-    expect(github.log()[0]).toBe('Delete profile: teams/web; create profile: web');
   });
 
   test('starts an empty repository with the folder it is given', async () => {

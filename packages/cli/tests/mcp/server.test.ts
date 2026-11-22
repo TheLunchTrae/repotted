@@ -110,16 +110,16 @@ describe('MCP server', () => {
     const github = new FakeGitHub();
     const client = await connect(github);
 
-    const planned = await call(client, 'plan', { repository: 'lunch/app', profile_path: 'repotted.yaml' });
+    const planned = await call(client, 'plan', { repository: 'lunch/app', profile_path: 'base.yaml' });
     expect(planned.isError).toBe(false);
     expect(github.writes).toEqual([]);
     const id = /plan_id: (\S+)/u.exec(planned.text)?.[1];
     expect(id).toBeDefined();
 
     const applied = await call(client, 'apply', { plan_id: id });
-    expect(applied).toEqual({ text: 'Applied 11 changes to lunch/app.', isError: false });
+    expect(applied).toEqual({ text: 'Applied 8 changes to lunch/app.', isError: false });
 
-    const again = await call(client, 'plan', { repository: 'lunch/app', profile_path: 'repotted.yaml' });
+    const again = await call(client, 'plan', { repository: 'lunch/app', profile_path: 'base.yaml' });
     expect(again.text).toBe('lunch/app matches the profile.');
   });
 

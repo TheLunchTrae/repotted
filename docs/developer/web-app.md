@@ -334,11 +334,10 @@ parse go unmentioned there.
 transitions.
 
 A profile folder is a real subfolder of the profiles folder, which the list
-shows only while a profile is in it, and `extends` is a path from the
+shows only while a profile is in it, and a reference is a path from the
 profile's own folder. `Profiles.move` and `Profiles.renameFolder` move files,
-and in the same turn rewrite `extends` in every listed profile whose path to
-its base changes, with core's `withExtends`, which replaces only the value's
-text. A write that fails takes back the writes before it, so a move is made
+and in the same turn rewrite the references in every listed profile whose
+path to a definition changes, with core's `withRewrittenReferences`. A write that fails takes back the writes before it, so a move is made
 whole or not at all. The batch selection, `Profiles.batch`, and which folders
 are closed are kept for the visit only, never in shared preferences, so
 opening a folder or selecting a profile commits nothing.
@@ -395,8 +394,8 @@ apply editors. `save-reusable-definitions.ts` validates destination names
 and effective configuration in the profiles' write turn, writes definitions
 exclusively, and replaces the corresponding new inline entries with relative references. A failed profile write removes every
 definition created by that attempt. Sync commits the complete change.
-Library links use effective source
-files for inherited values. Saving a definition refreshes the existing
+Library links use the effective source
+files of referenced values. Saving a definition refreshes the existing
 editor cache, preserving unrelated edits. Consumer tracking includes cached
 unsaved references; deletion refreshes dependencies before checking its
 kind, dirty state, profile consumers, and assignments.
@@ -409,8 +408,8 @@ keep their row identities; unnamed or duplicate entries use their original
 list positions. Unknown keys enable a cleanup-only save without marking the
 profile as an unsaved user edit. The save preview lists those keys. Saving
 prunes unknown fields from the original YAML document while retaining known
-invalid values, comments, and open records such as rule parameters. Base
-files stay untouched. Syntax-repair saves use the same cleanup.
+invalid values, comments, and open records such as rule parameters.
+Referenced files stay untouched. Syntax-repair saves use the same cleanup.
 Corrections edit the original document before validating
 the result. Planning still uses `resolveProfile`, which requires a valid
 configuration.
@@ -454,8 +453,8 @@ reads only the blobs of the profiles it adds or changes. The preview copies
 the working copy, in a turn of the profiles' queue so no sync changes it
 mid-read, into `/preview/<n>/before` and `/preview/<n>/after`, lays the
 branch's files over the second, and resolves every profile on both sides, so
-a profile that changes only through its base shows too. A profile whose
-chain leaves its side's folder doesn't load, so a branch can't point one at
+a profile that changes only through a definition it references shows too. A
+profile whose chain leaves its side's folder doesn't load, so a branch can't point one at
 the browser's other profiles. The before side is the working copy, not the
 default branch, so the preview lists the profiles whose blob ids differ from
 the sync record, which it would show as undone by the branch. Its rows reuse
@@ -494,7 +493,7 @@ belong to profiles and never form an apply state.
 `config-protection.ts` holds the built-in protection for a config
 repository, as profile YAML by what owns the repository, and checks the
 repository the profiles are kept in against it. Its apply is an ordinary
-apply whose staged file extends `/built-in/<name>.yaml`, which `Apply` marks
+apply whose staged file lists `/built-in/<name>.yaml` in `extends`, which `Apply` marks
 `builtIn` so the edits can't be saved back to it. A new built-in, such as one
 for organizations, is another entry there.
 [State machines](state-machines.md#web-config-repository-protection) lists

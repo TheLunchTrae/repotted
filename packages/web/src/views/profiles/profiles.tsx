@@ -55,7 +55,6 @@ interface RowProps {
 }
 
 function ProfileRow({ listing, profiles, onOpen }: RowProps): JSX.Element {
-  const base = profiles.listings.value.find((item) => item.file === listing.extends);
   return (
     <li class="selectable-row">
       <input
@@ -82,7 +81,6 @@ function ProfileRow({ listing, profiles, onOpen }: RowProps): JSX.Element {
           {listing.problem === null && (
             <span>{listing.owner_type === null ? 'For any owner' : ownerTypes[listing.owner_type]}</span>
           )}
-          {base !== undefined && <span>Extends {base.name}</span>}
         </span>
       </button>
     </li>
@@ -393,14 +391,7 @@ export function DeleteProfiles({ listings, profiles, onClose }: DeleteProps): JS
               ? `${one === undefined ? 'The files are' : 'The file is'} deleted from the folder on this computer too. ${one === undefined ? 'They' : 'It'} can't be brought back from here.`
               : `${one === undefined ? 'They' : 'It'} can't be brought back.`}
         </p>
-        {dependents.length > 0 && noun === 'profile' && (
-          <p>
-            {dependents.map((item) => item.name).join(', ')} {dependents.length === 1 ? 'extends' : 'extend'}{' '}
-            {one === undefined ? 'one of them' : 'it'} and {dependents.length === 1 ? 'stops' : 'stop'} loading until
-            pointed at another profile.
-          </p>
-        )}
-        {dependents.length > 0 && noun === 'definition' && (
+        {dependents.length > 0 && (
           <p>Remove references from {dependents.map((item) => item.name).join(', ')} before deleting.</p>
         )}
         {error !== undefined && (
@@ -574,7 +565,6 @@ export function Profile({ listing, profiles, router, standalone, onSaved }: Prof
   const couldNotRead = profiles.settingsCaptureCouldNotRead.value;
   const editor = profiles.editor.value;
   const opened = profiles.opened.value;
-  const base = profiles.listings.value.find((item) => item.file === listing.extends);
   const save = async (mode: SaveMode = 'applies'): Promise<void> => {
     const current = profiles.editor.value;
     if (current === undefined || !(mode === 'applies' ? current.canSave.value : current.canSaveAsDraft.value)) {
@@ -615,20 +605,6 @@ export function Profile({ listing, profiles, router, standalone, onSaved }: Prof
                   }}
                 >
                   Change
-                </button>
-              </>
-            )}
-            {base !== undefined && (
-              <>
-                , extends{' '}
-                <button
-                  class="link"
-                  type="button"
-                  onClick={() => {
-                    run(profiles.select(base));
-                  }}
-                >
-                  {base.name}
                 </button>
               </>
             )}

@@ -78,11 +78,14 @@ try {
     name: 'plan',
     arguments: {
       repository: 'octo-org/app',
-      profile: 'extends: repotted.yaml\nmerge: { allow_rebase_merge: false }\n',
+      profile: 'references: { rulesets: [base.yaml] }\n',
     },
   });
   const text = planned.result?.content?.[0]?.text ?? '';
-  if (planned.result?.isError !== true || !text.includes('Every merge method is off')) {
+  if (
+    planned.result?.isError !== true ||
+    !text.includes(`${examples}base.yaml is not a reusable rulesets definition`)
+  ) {
     throw new Error(`Unexpected plan reply: ${JSON.stringify(planned)}`);
   }
   const runtime = `node ${nodeVersion}`;

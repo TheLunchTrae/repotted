@@ -1,5 +1,5 @@
-# Trae's standard setup, from TheLunchTrae/github-setup. Repository profiles
-# extend it and add what differs, such as their required status checks.
+# Trae's standard setup, from TheLunchTrae/github-setup. A repository applies
+# it first, then a profile of what differs, such as its required status checks.
 repository:
   has_projects: false
   allow_auto_merge: false

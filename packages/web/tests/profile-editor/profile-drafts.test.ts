@@ -1,6 +1,7 @@
 import { resolveProfile } from '@repotted/core';
 import { afterEach, expect, test } from 'vitest';
 
+import { stagedStore } from '../../src/app/apply/apply.js';
 import type { EntryList, EntryRow } from '../../src/app/profile-editor/entry-edits.js';
 import { ProfileEditor, type SettingRow } from '../../src/app/profile-editor/profile-editor.js';
 import { type SettingField, settingSections } from '../../src/app/profile-editor/setting-fields.js';
@@ -12,12 +13,14 @@ afterEach(async () => {
 
 const file = '/profiles/web.yaml';
 
+/** A file that names `apply_to` opens as an apply's one-off edits over the profiles it names. */
 async function opened(files: Record<string, string>): Promise<ProfileEditor> {
   await mkdir('/profiles', { recursive: true });
   for (const [name, text] of Object.entries(files)) {
     await writeFile(`/profiles/${name}`, text);
   }
-  const editor = new ProfileEditor(file);
+  const store = files['web.yaml']?.startsWith('apply_to:') === true ? stagedStore : undefined;
+  const editor = new ProfileEditor(file, undefined, store);
   await editor.load();
   return editor;
 }
@@ -230,7 +233,7 @@ test('discarding the draft leaves only what applies, and waits while a change is
 test("a base profile's draft is left to that profile", async () => {
   const editor = await opened({
     'base.yaml': `repository:\n  has_wiki: false\ndrafts:\n  repository:\n    has_wiki: true\nrulesets:\n${ruleset('Main', '    draft: true\n')}`,
-    'web.yaml': 'extends: base.yaml\nrepository:\n  has_issues: true\n',
+    'web.yaml': 'apply_to: lunch/app\nextends: base.yaml\nrepository:\n  has_issues: true\n',
   });
 
   expect(row(editor, 'repository.has_wiki')).toMatchObject({
@@ -403,22 +406,6 @@ test('a discard that fails leaves the draft, with why', async () => {
   expect(editor.saving.value).toBe(false);
 });
 
-test("a change to a base profile's draft, in a group this profile drafts too, holds no save back", async () => {
-  const base = (allowed: boolean): string =>
-    `drafts:\n  actions:\n    selected_actions:\n      github_owned_allowed: ${String(allowed)}\n`;
-  const editor = await opened({
-    'base.yaml': base(true),
-    'web.yaml': 'extends: base.yaml\ndrafts:\n  actions:\n    selected_actions:\n      verified_allowed: true\n',
-  });
-  await editor.set(field('repository.has_wiki'), true);
-  await writeFile('/profiles/base.yaml', base(false));
-
-  await editor.save(write, 'draft');
-
-  expect(editor.saveError.value).toBeUndefined();
-  expect(editor.dirty.value).toBe(false);
-});
-
 test('a preview shows what a save would change in what applies, the draft with the unsaved, and writes nothing', async () => {
   const text = 'repository:\n  has_wiki: false\n  has_issues: true\ndrafts:\n  repository:\n    has_wiki: true\n';
   const editor = await opened({ 'web.yaml': text });
@@ -446,7 +433,7 @@ test('a preview shows what a save would change in what applies, the draft with t
 test('a preview of a save that applies nothing new says so, and one Save could not make is not opened', async () => {
   const editor = await opened({
     'base.yaml': 'repository:\n  has_wiki: false\n',
-    'web.yaml': 'extends: base.yaml\nrepository:\n  has_wiki: false\n',
+    'web.yaml': 'apply_to: lunch/app\nextends: base.yaml\nrepository:\n  has_wiki: false\n',
   });
   await editor.set(field('repository.has_wiki'), undefined);
 
@@ -462,7 +449,7 @@ test('a preview of a save that applies nothing new says so, and one Save could n
 test('a preview goes out of date with the profile: a fresh read closes it, and a slow one never opens late', async () => {
   const editor = await opened({
     'base.yaml': 'repository:\n  has_wiki: false\n',
-    'web.yaml': 'extends: base.yaml\nrepository:\n  has_issues: true\n',
+    'web.yaml': 'apply_to: lunch/app\nextends: base.yaml\nrepository:\n  has_issues: true\n',
   });
   await editor.set(field('repository.has_issues'), false);
   await editor.openPreview();

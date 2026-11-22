@@ -1041,14 +1041,12 @@ describe('account commands', () => {
 
 describe('profile commands', () => {
   test('profile resolves a profile as JSON and saves edits to its file', async () => {
-    const base = path.join(directory, 'base.yaml');
-    const file = path.join(directory, 'repotted.yaml');
-    await copyFile(path.join(examples, 'base.yaml'), base);
-    await copyFile(path.join(examples, 'repotted.yaml'), file);
+    const file = path.join(directory, 'base.yaml');
+    await copyFile(path.join(examples, 'base.yaml'), file);
 
     const shown = await cli(new FakeGitHub(), 'profile', file, '--json');
     expect(shown).toMatchObject({ code: 0, err: '' });
-    expect(document(shown)).toMatchObject({ chain: [file, base], sources: { repository: { has_projects: base } } });
+    expect(document(shown)).toMatchObject({ chain: [file], sources: { repository: { has_projects: file } } });
 
     const edited = await cli(
       new FakeGitHub(),
@@ -1300,7 +1298,6 @@ describe('profile commands', () => {
           name: 'base',
           folder: '',
           file: path.join(examples, 'base.yaml'),
-          extends: null,
           problem: null,
           owner_type: null,
         },
@@ -1308,7 +1305,6 @@ describe('profile commands', () => {
           name: 'repotted',
           folder: '',
           file: path.join(examples, 'repotted.yaml'),
-          extends: path.join(examples, 'base.yaml'),
           problem: null,
           owner_type: null,
         },
@@ -1320,25 +1316,13 @@ describe('profile commands', () => {
     const root = await mkdtemp(path.join(directory, 'profiles-'));
     await mkdir(path.join(root, 'team', 'apps'), { recursive: true });
     await writeFile(path.join(root, 'base.yaml'), 'repository: { has_issues: true }\n');
-    await writeFile(path.join(root, 'team', 'oss.yaml'), 'extends: ../base.yaml\n');
-    await writeFile(path.join(root, 'team', 'apps', 'web.yaml'), 'extends: ../oss.yaml\n');
+    await writeFile(path.join(root, 'team', 'oss.yaml'), 'owner_type: user\n');
+    await writeFile(path.join(root, 'team', 'apps', 'web.yaml'), 'repository: { has_wiki: false }\n');
 
     const result = await cli(new FakeGitHub(), 'profiles', root);
 
     expect(result).toMatchObject({ code: 0, err: '' });
-    expect(result.out).toBe('base\nteam/oss (extends base)\nteam/apps/web (extends team/oss)\n');
-  });
-
-  test('profiles names a base outside the folder by its file name without the extension', async () => {
-    const root = await mkdtemp(path.join(directory, 'profiles-'));
-    await mkdir(path.join(root, 'inner'));
-    await writeFile(path.join(root, 'shared.yaml'), 'repository: { has_issues: true }\n');
-    await writeFile(path.join(root, 'inner', 'web.yaml'), 'extends: ../shared.yaml\n');
-
-    const result = await cli(new FakeGitHub(), 'profiles', path.join(root, 'inner'));
-
-    expect(result).toMatchObject({ code: 0, err: '' });
-    expect(result.out).toBe('web (extends shared)\n');
+    expect(result.out).toBe('base\nteam/oss (for personal accounts)\nteam/apps/web\n');
   });
 });
 

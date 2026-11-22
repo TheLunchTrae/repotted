@@ -22,7 +22,7 @@ function memory(start: Record<string, unknown> = {}): Preferences & { readonly k
 }
 
 const base = 'repository:\n  has_wiki: false\n';
-const web = 'extends: ../base.yaml\nmerge:\n  allow_squash_merge: true\n';
+const web = 'merge:\n  allow_squash_merge: true\n';
 const copy = '/profiles/github/lunch/config/@profiles';
 
 class RepositoryWithFailingSyncs extends FakeGitRepository {
@@ -336,14 +336,10 @@ test('a sign-in refused while connecting is reported as signed out, and the reas
   expect(profiles.connectError.value).toBeUndefined();
 });
 
-test('a new profile starts empty or extends another, in the folder asked for, and opens', async () => {
+test('a new profile starts empty, in the folder asked for, and opens', async () => {
   await inBrowser({ 'base.yaml': `owner_type: organization\n${base}`, 'any.yaml': base });
   const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
   await profiles.refresh();
-  const [any, typed] = profiles.listings.value;
-  if (any === undefined || typed === undefined) {
-    throw new Error('The folder should list both profiles.');
-  }
 
   expect(
     await profiles.create({ name: ' mine ', folder: '', start: { kind: 'empty' }, ownerType: 'user' }),
@@ -351,19 +347,14 @@ test('a new profile starts empty or extends another, in the folder asked for, an
   expect(await readFile('/profiles/browser/mine.yaml', 'utf8')).toBe('owner_type: user\n');
   expect(profiles.selected.value?.name).toBe('mine');
 
-  await profiles.create({ name: 'web', folder: 'teams', start: { kind: 'extends', base: any }, ownerType: 'user' });
-  expect(await readFile('/profiles/browser/teams/web.yaml', 'utf8')).toBe('extends: "../any.yaml"\nowner_type: user\n');
-
-  // A typed base gives its type, so the new file names none.
-  await profiles.create({ name: 'org', folder: 'teams', start: { kind: 'extends', base: typed }, ownerType: 'user' });
-  expect(await readFile('/profiles/browser/teams/org.yaml', 'utf8')).toBe('extends: "../base.yaml"\n');
+  await profiles.create({ name: 'web', folder: 'teams', start: { kind: 'empty' }, ownerType: undefined });
+  expect(await readFile('/profiles/browser/teams/web.yaml', 'utf8')).toBe('');
 
   expect(profiles.listings.value.map((listing) => [listing.name, listing.problem, listing.owner_type])).toEqual([
     ['any', null, null],
     ['base', null, 'organization'],
     ['mine', null, 'user'],
-    ['org', null, 'organization'],
-    ['web', null, 'user'],
+    ['web', null, null],
   ]);
   expect(profiles.folders.value).toEqual(['', 'teams']);
 });
@@ -575,11 +566,11 @@ test('making and deleting a profile kept on GitHub commits each', async () => {
   expect(drawn(profiles.tree.value)).toEqual(['base', 'teams/ 1', '  web']);
 });
 
-test('the profiles that extend one, directly or through another, are named before it is deleted', async () => {
+test('the profiles that reference a definition are named before it is deleted', async () => {
   await inBrowser({
-    'base.yaml': base,
-    'mid.yaml': 'extends: base.yaml\n',
-    'teams/leaf.yaml': 'extends: ../mid.yaml\n',
+    'base.yaml': 'kind: ruleset\nrulesets: [{ name: Main }]\n',
+    'mid.yaml': 'references: { rulesets: [base.yaml] }\n',
+    'teams/leaf.yaml': 'references: { rulesets: [../base.yaml] }\n',
     'other.yaml': base,
   });
   const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
@@ -590,13 +581,6 @@ test('the profiles that extend one, directly or through another, are named befor
   }
 
   expect(profiles.dependents(root).map((listing) => listing.name)).toEqual(['mid', 'leaf']);
-
-  await profiles.remove(root);
-  expect(profiles.listings.value.map((listing) => [listing.name, listing.problem === null])).toEqual([
-    ['mid', false],
-    ['other', true],
-    ['leaf', false],
-  ]);
 });
 
 test('a new profile asked for during a sync is checked against what the sync brings in', async () => {
@@ -785,7 +769,7 @@ test('invalid profile corrections outlast navigation, hold a move back, and save
   if (editor === undefined || repair === undefined) {
     throw new Error('An invalid profile should offer its YAML for repair.');
   }
-  await repair.type('extends: base.yaml\nrepository:\n  has_issues: false\n');
+  await repair.type('repository:\n  has_issues: false\n');
   await profiles.select(undefined);
   expect(profiles.unsavedNames.value).toEqual(['repair']);
   await profiles.keepInBrowser();
@@ -795,7 +779,7 @@ test('invalid profile corrections outlast navigation, hold a move back, and save
   expect(profiles.editor.value).toBe(editor);
   expect(editor.repair.value).toBe(repair);
   expect(await profiles.saveAll()).toBe('saved');
-  expect(github.files()['profiles/repair.yaml']).toBe('extends: base.yaml\nrepository:\n  has_issues: false\n');
+  expect(github.files()['profiles/repair.yaml']).toBe('repository:\n  has_issues: false\n');
   expect(editor.loaded.value).toBe(true);
   expect(profiles.unsavedNames.value).toEqual([]);
   expect(profiles.selected.value?.problem).toBeNull();
@@ -1051,9 +1035,8 @@ function listed(profiles: Profiles, name: string): ProfileListing {
   return listing;
 }
 
-test('moving profiles kept on GitHub moves their files and points what extends them at the new place', async () => {
+test('moving profiles kept on GitHub moves their files and keeps the one open open', async () => {
   const github = repository();
-  github.write({ 'profiles/mid.yaml': '# Shared by every team\nextends: base.yaml # the root\n' });
   const profiles = await connected(github);
   await profiles.select(listed(profiles, 'base'));
   profiles.selectForBatch([listed(profiles, 'base'), listed(profiles, 'web')], true);
@@ -1064,10 +1047,9 @@ test('moving profiles kept on GitHub moves their files and points what extends t
   expect(files['profiles/base.yaml']).toBeUndefined();
   expect(files['profiles/teams/web.yaml']).toBeUndefined();
   expect(files['profiles/shared/base.yaml']).toBe(base);
-  expect(files['profiles/shared/web.yaml']).toBe('extends: base.yaml\nmerge:\n  allow_squash_merge: true\n');
-  expect(files['profiles/mid.yaml']).toBe('# Shared by every team\nextends: shared/base.yaml # the root\n');
+  expect(files['profiles/shared/web.yaml']).toBe(web);
   expect(profiles.listings.value.every((listing) => listing.problem === null)).toBe(true);
-  expect(drawn(profiles.tree.value)).toEqual(['mid', 'shared/ 2', '  base', '  web']);
+  expect(drawn(profiles.tree.value)).toEqual(['shared/ 2', '  base', '  web']);
   expect(profiles.selected.value?.file).toBe(`${copy}/shared/base.yaml`);
   expect(profiles.opened.value?.file).toBe(`${copy}/shared/base.yaml`);
   expect(profiles.batch.value).toEqual([]);
@@ -1075,7 +1057,7 @@ test('moving profiles kept on GitHub moves their files and points what extends t
 
 test('a move is one commit, keeps a .yml name, and opens the folder it went to', async () => {
   const github = repository();
-  github.write({ 'profiles/apps/site.yml': 'extends: ../base.yaml\n' });
+  github.write({ 'profiles/apps/site.yml': 'labels: [{ name: bug }]\n' });
   const profiles = await connected(github);
   profiles.toggleFolder('teams');
   const commits = github.commits.size;
@@ -1083,7 +1065,7 @@ test('a move is one commit, keeps a .yml name, and opens the folder it went to',
   expect(await profiles.move([listed(profiles, 'site')], 'teams')).toBeUndefined();
 
   expect(github.commits.size).toBe(commits + 1);
-  expect(github.files()['profiles/teams/site.yml']).toBe('extends: ../base.yaml\n');
+  expect(github.files()['profiles/teams/site.yml']).toBe('labels: [{ name: bug }]\n');
   expect(drawn(profiles.tree.value)).toEqual(['base', 'teams/ 2', '  site', '  web']);
 });
 
@@ -1111,7 +1093,7 @@ test('a folder that matches another in case only, or runs through a profile, is 
 
 test('a write that fails partway takes back what the move wrote, and nothing is committed', async () => {
   const github = repository();
-  github.write({ 'profiles/aaa.yaml': 'extends: base.yaml\n', 'profiles/zzz.yaml': base });
+  github.write({ 'profiles/aaa.yaml': 'labels: [{ name: bug }]\n', 'profiles/zzz.yaml': base });
   const profiles = await connected(github);
   // A folder where base.yaml would go, which the list never shows, as it holds no profile.
   await mkdir(`${copy}/shared/base.yaml`, { recursive: true });
@@ -1122,19 +1104,19 @@ test('a write that fails partway takes back what the move wrote, and nothing is 
   ).toBe('base.yaml is already in shared.');
 
   expect(github.commits.size).toBe(commits);
-  expect(await readFile(`${copy}/aaa.yaml`, 'utf8')).toBe('extends: base.yaml\n');
+  expect(await readFile(`${copy}/aaa.yaml`, 'utf8')).toBe('labels: [{ name: bug }]\n');
   expect(await readFile(`${copy}/base.yaml`, 'utf8')).toBe(base);
   expect((await readdir(`${copy}/shared`, { withFileTypes: true })).map((entry) => entry.name)).toEqual(['base.yaml']);
   expect(profiles.listings.value.every((listing) => listing.problem === null)).toBe(true);
   expect(drawn(profiles.tree.value)).toEqual(['aaa', 'base', 'zzz', 'teams/ 1', '  web']);
 });
 
-test('a move that would replace a profile, would rewrite or move one with unsaved changes, or holds one that does not load, moves nothing', async () => {
+test('a move that would replace a profile, would move one with unsaved changes, or holds one that does not load, moves nothing', async () => {
   await inBrowser({
     'base.yaml': base,
     'teams/base.yaml': base,
     'teams/web.yaml': web,
-    'broken.yaml': 'extends: gone.yaml\n',
+    'broken.yaml': 'repository: { has_wiki: broken }\n',
   });
   const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
   await profiles.refresh();
@@ -1156,8 +1138,6 @@ test('a move that would replace a profile, would rewrite or move one with unsave
   }
   await editor.set(squash, false);
   expect(await profiles.move([listed(profiles, 'web')], '')).toBe('Save or reset the changes to web first.');
-  // Moving what it extends would rewrite it under its open editor.
-  expect(await profiles.move([listed(profiles, 'base')], 'shared')).toBe('Save or reset the changes to web first.');
 
   expect(drawn(profiles.tree.value)).toEqual(before);
   expect(await readFile('/profiles/browser/teams/web.yaml', 'utf8')).toBe(web);
@@ -1167,8 +1147,8 @@ test('renaming a folder moves the profiles in it and under it, and refuses a nam
   await inBrowser({
     'base.yaml': base,
     'teams/web.yaml': web,
-    'teams/ios/app.yaml': 'extends: ../web.yaml\n',
-    'apps/site.yaml': 'extends: ../teams/ios/app.yaml\n',
+    'teams/ios/app.yaml': base,
+    'apps/site.yaml': base,
   });
   const profiles = new Profiles(new FakeGitRepository(), memory(), () => undefined);
   await profiles.refresh();
@@ -1187,8 +1167,7 @@ test('renaming a folder moves the profiles in it and under it, and refuses a nam
     '    app',
   ]);
   expect(await readFile('/profiles/browser/squads/web.yaml', 'utf8')).toBe(web);
-  expect(await readFile('/profiles/browser/squads/ios/app.yaml', 'utf8')).toBe('extends: ../web.yaml\n');
-  expect(await readFile('/profiles/browser/apps/site.yaml', 'utf8')).toBe('extends: ../squads/ios/app.yaml\n');
+  expect(await readFile('/profiles/browser/squads/ios/app.yaml', 'utf8')).toBe(base);
   expect(profiles.listings.value.every((listing) => listing.problem === null)).toBe(true);
 
   profiles.toggleFolder('squads/ios');
@@ -1196,14 +1175,13 @@ test('renaming a folder moves the profiles in it and under it, and refuses a nam
   expect(drawn(profiles.tree.value)).toEqual(['base', 'apps/ 1', '  site', 'teams/ 2', '  web', '  ios/ 1 closed']);
 });
 
-test('deleting the selected profiles together names what extends any of them and commits once', async () => {
+test('deleting the selected profiles together commits once', async () => {
   const github = repository();
-  github.write({ 'profiles/teams/ios.yaml': base, 'profiles/leaf.yaml': 'extends: teams/web.yaml\n' });
+  github.write({ 'profiles/teams/ios.yaml': base, 'profiles/leaf.yaml': web });
   const profiles = await connected(github);
   profiles.selectForBatch([listed(profiles, 'base'), listed(profiles, 'ios')], true);
   const commits = github.commits.size;
 
-  expect(profiles.dependents(...profiles.batch.value).map((listing) => listing.name)).toEqual(['leaf', 'web']);
   expect(await profiles.remove(...profiles.batch.value)).toBeUndefined();
 
   expect(github.commits.size).toBe(commits + 1);

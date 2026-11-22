@@ -105,7 +105,7 @@ function names(profiles: Profiles): string[] {
 test('a first sync brings each side what the other has and deletes nothing, and later changes travel both ways', async () => {
   const disk = new InMemoryLocalFolder('config', {
     'base.yaml': base,
-    'teams/web.yaml': 'extends: ../base.yaml\n',
+    'teams/web.yaml': 'labels: [{ name: bug }]\n',
     '.hidden.yaml': 'x',
   });
   await here({ 'mine.yaml': 'merge: {}\n' });
@@ -116,12 +116,12 @@ test('a first sync brings each side what the other has and deletes nothing, and 
     conflicts: [],
     failures: [],
   });
-  expect(await readFile(`${working}/teams/web.yaml`, 'utf8')).toBe('extends: ../base.yaml\n');
+  expect(await readFile(`${working}/teams/web.yaml`, 'utf8')).toBe('labels: [{ name: bug }]\n');
   expect(disk.kept.get('mine.yaml')).toBe('merge: {}\n');
 
   // A change here, a change there, and a deletion on each side.
   await here({ 'base.yaml': 'repository:\n  has_wiki: true\n' });
-  disk.kept.set('teams/web.yaml', 'extends: ../base.yaml\nmerge: {}\n');
+  disk.kept.set('teams/web.yaml', 'labels: [{ name: bug }]\nmerge: {}\n');
   disk.kept.set('new.yaml', 'labels: []\n');
   await rm(`${working}/mine.yaml`);
   expect(await syncLocalFolder(working, disk)).toEqual({

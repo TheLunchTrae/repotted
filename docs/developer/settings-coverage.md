@@ -56,7 +56,7 @@ These hooks are why a plan settles after one apply:
   labeled runner type or a `null` label that would leave labeled runners
   without a label is skipped. A profile that sets the setup to not
   configured leaves out a runner type or label without a warning, so it can
-  turn off a base profile's setup. One that names a runner for a setup the
+  turn off an earlier profile's setup. One that names a runner for a setup the
   repository leaves not configured gets a warning. GitHub's docs don't
   describe this: it follows how GitHub reports these settings, which reads
   `null` for the label with standard runners and for both fields while not

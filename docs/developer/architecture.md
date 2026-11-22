@@ -48,9 +48,16 @@ quality setup with Actions disabled. The editor previews through this
 validation, so conflicts block saving to apply while remaining available as
 drafts. Inactive settings are handled by [setting dependencies](#setting-dependencies).
 
-`packages/core/src/profiles/profile.ts` loads a profile and the chain of profiles it
-`extends`, merges them, and validates the result. Validating after the merge
-lets a base profile rely on what the profiles that extend it add.
+`packages/core/src/profiles/profile.ts` loads a profile and the reusable definitions it
+references, or the profiles a staged apply lists with their references,
+merges them, and validates the result. Validating after the merge lets an
+earlier profile rely on what a later one adds.
+
+A profile stands alone: it can't extend another, since applying profiles
+together covers that need. The schema keeps `extends` as a key that takes
+no value, so a file that names one is refused at that key rather than
+dropped as an unknown field, which would apply it without what it built on,
+and the editor's **Remove invalid configuration** can take it out.
 `parseLayer` checks duplicate entry names and autolink prefixes in each file
 before merging, separately for entries that apply and drafts. It uses the
 same case-insensitive keys for environments and labels as the merge, so
@@ -60,8 +67,8 @@ such as `selected_actions`. `flattenSettings` gives each setting its path, as
 `has_wiki` or `selected_actions.verified_allowed`, and `unflattenSettings`
 turns paths back into settings, so merging, the sources the resolved profile
 records, and saving a staged apply's edits all read a group the same way. A
-ruleset, environment, label, or autolink replaces the base's entry of the same
-name or prefix whole, and `pages: { absent: true }` replaces a base's site. The
+ruleset, environment, label, or autolink replaces an earlier layer's entry of the same
+name or prefix whole, and `pages: { absent: true }` replaces an earlier layer's site. The
 resolved profile records which file sets each value, which
 `repotted profile --json` reports and the web app shows.
 
@@ -91,8 +98,8 @@ Planning reports each ignored setting as `not_applicable`.
 `captureProfile` and `stringifyProfile` omit inactive settings. `editChain`
 resolves the edited profile, removes inactive settings from that file's YAML
 document, then resolves it again. It preserves comments on remaining settings,
-never edits a base file, and leaves drafts alone. Resolved profiles keep
-inherited settings so an override can enable their dependency; planning checks
+never edits another file, and leaves drafts alone. Resolved profiles keep
+earlier profiles' settings so a later one can enable their dependency; planning checks
 the resolved values against live state. The security planner also reads
 Dependabot alerts when only security updates are named, to check that
 dependency without managing the alerts.
@@ -122,10 +129,10 @@ read the schema.
 names in the file, drafts included: an unset setting, a dropped push ruleset,
 or a ruleset or environment written whole without what it can't have, and
 without a list that leaves empty. It runs through `editLayer`, as other edits
-do, so the file keeps its comments and gets `owner_type` first, or right
-after `extends`. It edits only the one file, so when the edit fails because a
-base file sets what the type lacks, and the file doesn't override it, the
-error names that base. `captureProfile` leaves out what the
+do, so the file keeps its comments and gets `owner_type` first. It edits
+only the one file, so when the edit fails because a reusable definition the
+file references sets what the type lacks, and the file doesn't override it,
+the error names that definition. `captureProfile` leaves out what the
 repository's owner lacks with `withoutOwnerConflicts` and warns of each part,
 as GitHub can report such a setting for a repository that doesn't have it.
 
@@ -178,11 +185,7 @@ itself when not even one name fits, in the change's own `counted` words when
 its noun would count the wrong thing. When the subject leaves any change out,
 the body lists every one, up to `mostCommitBodyLines` lines. Sync describes
 its files with `profileFileChanges`, which reads a delete and a create of the
-same blob as a rename, or a move into another folder. An override whose
-relative `extends` changes during a move also pairs when its other values
-and resolved base match. Bases moved in the same sync are followed to their
-new paths. Only unmatched deletes need their old blobs read for this check.
-The web app's
+same blob as a rename, or a move into another folder. The web app's
 preferences and marker commits use the same function.
 
 `editProfile` in the same file edits a profile in place for
@@ -206,7 +209,7 @@ same way.
 
 `resolveProfile` also accepts replacement text for the file being resolved.
 It checks that text at the file's real path without writing, so an invalid
-file can be repaired while keeping inheritance and cycle checks. The web
+file can be repaired while keeping the checks on what it references. The web
 app's [repair editor](web-app.md#profiles) uses this for whole-file corrections
 and refuses to save over a changed file.
 
@@ -420,10 +423,11 @@ Safety section of [AGENTS.md](../../AGENTS.md).
 ## Staged applies
 
 A staged apply (`packages/core/src/staging/staged.ts`) is a profile layer in a file of
-its own. The file names the repository in `apply_to`, extends the profile it
-starts from with `extends`, and holds one-off edits as profile keys, so
-`resolveProfile` lays it over the profile the way an override lays over a
-base: settings key by key, and a ruleset or environment whole by name. Its
+its own. The file names the repository in `apply_to`, lists the profiles it
+starts from in `extends`, and holds one-off edits as profile keys, so
+`resolveStagedApply` lays it over those profiles the way a later profile lays
+over an earlier one: settings key by key, and a ruleset or environment whole
+by name. Its
 `exclude` list then takes values out of the resolved profile. Planning and
 applying use the engine unchanged, so a staged apply keeps every property of
 [Apply](#apply): the saved plan holds the profile it was made from, and apply
@@ -451,17 +455,14 @@ clearing them would lose a change no profile holds. A staged apply that
 starts from the repository has no profile to save to, and one that starts
 from several has no one profile to save to.
 
-A staged apply's `extends` can also list several profiles, which apply in
-order, later ones overriding earlier ones. `LayerRead.bases` carries the list,
-and `readChain` reads each one's own chain and lays them end to end, base
-first. A file that more than one of them builds on, such as a shared starting
-point, applies once, at its first place, so it never undoes what a profile
-after it set. A profile named twice is refused, and so are profiles for
-different owner types, as `chainOwnerType` refuses any chain that mixes them.
-Each link records which listed profile it came in through, so
-`removalWarnings` can name a later profile whose `absent: true` removes what
-an earlier one adds; within one chain that is how a profile drops an entry,
-so it is not named. This is how a repository's ordered list of profiles is
+A staged apply's `extends` can list several profiles, which apply in order,
+later ones overriding earlier ones. `LayerRead.listedProfiles` carries the
+list, and `readListed` reads each profile with its references and lays them
+end to end, the first listed first. A profile named twice is refused, and so
+are profiles for different owner types, as `chainOwnerType` refuses any
+chain that mixes them. Each link records the place of the listed profile it
+came in with, so `removalWarnings` can name a later profile whose
+`absent: true` removes what an earlier one adds. This is how a repository's ordered list of profiles is
 planned and applied.
 
 `planStagedApply` also names the exclusion that leaves out each change of the
@@ -564,8 +565,8 @@ lists definitions relative to that profile. General Actions settings remain
 in the `actions` settings section. Definitions
 cannot inherit profiles or reference other definitions.
 
-`readListed` deduplicates inherited profiles before expanding their reference
-links. Each referenced definition applies immediately before its consumer's
+`readListed` refuses a profile listed twice, then expands each listed
+profile's reference links. Each referenced definition applies immediately before its consumer's
 inline layer. Reusing one definition from several consumers applies it at each
 consumer's position, so explicit later references keep their precedence. Source
 maps retain the definition's path. Normal resolved validation checks owner types

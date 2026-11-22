@@ -50,12 +50,12 @@ profile. For example, `allow_merge_commit: false` makes the merge commit title
 and message settings inactive. Dependencies use the profile's values first,
 then the repository's current values for settings the profile leaves out.
 Captures leave inactive settings out. Saving edits removes them from the
-edited YAML file, including settings disabled by a base profile; it leaves
-base files and drafts unchanged.
+edited YAML file, including settings disabled by a profile applied before it;
+it leaves other files and drafts unchanged.
 
 The profile editor checks conflicting active settings before **Save**. Code
 scanning default setup and code quality setup cannot be configured while the
-profile disables Actions, including through inherited settings. Fix the
+profile disables Actions, including through a profile applied before it. Fix the
 conflict or use **Save as draft** to keep unfinished changes out of plans.
 A setting the profile leaves unmanaged still depends on the target repository's setup.
 
@@ -133,7 +133,7 @@ there. From then on it's checked like the rest of the profile. The web app
 finishes the whole draft at once when you click **Save**.
 
 Drafts never change what applies. A draft can share a name with an entry in
-the same profile or in a base profile, and a draft setting can sit beside the
+the same profile or in a profile applied before it, and a draft setting can sit beside the
 same setting, which applies until you finish the draft. Two drafts in the same
 list can't share a name or prefix. Unknown fields in drafts are ignored on
 load and removed on save, while known fields can hold unfinished values. A
@@ -219,9 +219,9 @@ references:
   rulesets: [main-ruleset.yaml, release-ruleset.yaml]
 ```
 
-References apply after the base profile and before inline rulesets. An inline
-entry with the same name replaces the referenced entry whole, following the
-same rule as profile inheritance. Two references in one profile cannot supply
+References apply after the profiles applied before this one and before inline
+rulesets. An inline entry with the same name replaces the referenced entry
+whole, as a later profile's entry replaces an earlier one's. Two references in one profile cannot supply
 the same target name. A missing definition or a reference to another kind of
 definition blocks resolution.
 
@@ -280,8 +280,9 @@ scanning and code quality use a `runner_label` only with labeled runners, and
 runners unless the profile names another type, so a label there is skipped
 with a warning, as is a labeled runner type, or a `null` label, that would
 leave labeled runners without a label. A setup that is not configured keeps no
-runner or setup options. To move a base profile's labeled runners to standard
-ones, set `runner_type: standard`; the base's label is ignored. Naming OIDC
+runner or setup options. To move an earlier profile's labeled runners to
+standard ones, set `runner_type: standard`; the earlier profile's label is
+ignored. Naming OIDC
 `include_claim_keys` stops using the default subject, and claim keys next to `use_default: true` are skipped, since GitHub
 ignores them.
 
@@ -313,7 +314,7 @@ new label, leaves the old one as it is and warns: GitHub can't merge two
 labels, and deleting the old one would take it off its issues. When it has
 several old names, the first one listed is renamed and the plan warns about
 the rest. An old name can't be a label the profile lists, including one it
-gets from a base profile, so rename a base's label in the base. Two labels
+gets from a profile applied before it, so rename that label in that profile. Two labels
 can't claim the same old name. A draft label that another label renames from
 gets a warning: the rename still applies, since drafts never change what
 applies.
@@ -343,55 +344,54 @@ repository's settings:
 A profile that breaks either rule stops at planning, before anything is
 written.
 
-## Extend a base profile
-
-`extends` names a base profile, as a path relative to the profile's file. A
-profile that extends a base gets everything the base sets and changes only
-what it sets itself:
-
-- Settings merge key by key, and so do the keys of an object of settings,
-  such as `selected_actions` or `code_scanning_default_setup`.
-- `pages: { absent: true }` replaces a base's site, and a site replaces a
-  base's `absent`.
-- A ruleset, environment, label, or autolink replaces the base's entry of the
-  same name or prefix whole. Entries with new names go after the base's.
-- Drafts merge the same way, but only with drafts: a draft replaces the base's
-  draft of the same key, name or prefix, and never an entry or setting that
-  applies.
-
-Repotted checks a profile after it merges it with its bases, so a base may
-leave out something that each profile extending it adds.
-
-Within each file, ruleset, environment, and label names and autolink prefixes
-must be unique among entries that apply, and separately among drafts.
-Environment and label names match without regard to case. Repotted refuses
-duplicates before merging and reports the file that contains them.
-
-[`examples/base.yaml`](../../examples/base.yaml) is a base profile, and
-[`examples/repotted.yaml`](../../examples/repotted.yaml) extends it.
-
 ## Apply several profiles
 
-A profile extends one base, but one apply can start from several profiles,
-such as a shared `node` profile and an `npm-package` profile. A staged apply
-lists them in `extends`, and they apply in that order, merging as a profile
-merges with its base, so later profiles override earlier ones:
+A profile stands on its own: it can't extend another profile. To share a
+setup, keep what every repository has in one profile and what differs in
+others, and apply them together, such as a shared `node` profile and an
+`npm-package` profile. In the web app, assign profiles to a folder of
+repositories and to a repository itself. A staged apply lists them in
+`extends`, and they apply in that order, so later profiles override earlier
+ones:
 
 ```yaml
 apply_to: octo-org/app
 extends: [node.yaml, npm-package.yaml]
 ```
 
-Each profile brings the bases it extends with it. A base that more than one of
-them extends applies once, at its first place, so it never undoes what a
-profile after it set. So list a shared base first, or leave it out: Repotted
-refuses a profile listed after one that already extends it, since it would
-change nothing there. It also refuses a profile listed twice, and profiles
-for different [owner types](#owner-type). When a later profile removes a
-ruleset, environment, label, autolink or Pages site that an earlier one adds,
-with `absent: true`, Repotted warns, since that is easy to miss. A profile
-that removes what its own base adds is how a profile drops an entry, so that
-gets no warning.
+A later profile changes only what it sets itself:
+
+- Settings merge key by key, and so do the keys of an object of settings,
+  such as `selected_actions` or `code_scanning_default_setup`.
+- `pages: { absent: true }` replaces an earlier site, and a site replaces an
+  earlier `absent`.
+- A ruleset, environment, label, or autolink replaces the earlier entry of the
+  same name or prefix whole. Entries with new names go after the earlier ones.
+- Drafts merge the same way, but only with drafts: a draft replaces an earlier
+  draft of the same key, name or prefix, and never an entry or setting that
+  applies.
+
+Repotted checks the profiles after it merges them, so an earlier profile may
+leave out something that each profile applied after it adds.
+
+Within each file, ruleset, environment, and label names and autolink prefixes
+must be unique among entries that apply, and separately among drafts.
+Environment and label names match without regard to case. Repotted refuses
+duplicates before merging and reports the file that contains them.
+
+Repotted refuses a profile listed twice, and profiles for different
+[owner types](#owner-type). When a later profile removes a ruleset,
+environment, label, autolink or Pages site that an earlier one adds, with
+`absent: true`, Repotted warns, since that is easy to miss.
+
+[`examples/base.yaml`](../../examples/base.yaml) is a shared setup, and
+[`examples/repotted.yaml`](../../examples/repotted.yaml) is what one
+repository adds to it; they apply in that order.
+
+A profile file that names a profile in `extends` doesn't load, so it
+never applies without what it named. Copy the settings it needs from that
+profile into the file, or apply the two profiles together, then remove the
+`extends` line. In the web app, **Remove invalid configuration** takes it out.
 
 ## Owner type
 
@@ -412,16 +412,17 @@ owner_type: user # or organization
   Cloud have, such as Pages `public` and `secret_scanning_validity_checks`.
 - Leaving it out makes the profile for any owner. It takes everything, and
   GitHub refuses what a repository's owner doesn't have when the plan applies.
-  A base profile that both kinds extend leaves it out.
+  A profile that both kinds apply leaves it out.
 
 [Settings coverage](../developer/settings-coverage.md#owners) lists what only
 some owners have, with GitHub's docs for each. Repotted refuses a draft
 setting the type doesn't have, and warns of a draft ruleset or environment
 that has something the type doesn't, since a draft may be unfinished.
 
-Along a chain of profiles, the nearest file that names a type gives it to the
-whole chain, so a profile that extends a typed base has the base's type. A
-chain can't mix types: a personal profile can't extend an organization one.
+A reusable definition that names a type gives it to a profile that references
+it and names none. Profiles applied together take the type of the last one
+that names it, and they can't mix types: a personal profile can't be applied
+with an organization one.
 
 `plan`, `apply`, `batch` and the web app refuse a repository whose owner
 is the other kind, before they read anything else. To use a profile's
@@ -430,12 +431,10 @@ settings for the other kind, copy the profile and change the copy's type with
 the new type doesn't have not managed: it removes those settings, drops a
 push ruleset, and keeps a ruleset or environment without the rules, bypass
 actors, or team reviewers it can't have. `--json` lists what each type change
-would remove under `owner_changes` first, drafts included. A base that sets
-something the new type doesn't have, which the profile doesn't override,
-stops the change, and the message names the base, since only the base can
-drop it. A profile that extends the changed
-one takes its new type, so it stops resolving if it sets something the type
-doesn't have, until it is changed too.
+would remove under `owner_changes` first, drafts included. A reusable
+definition the profile references that sets something the new type doesn't
+have, which the profile doesn't override, stops the change, and the message
+names the definition, since only the definition can drop it.
 
 `capture` writes the captured repository's owner type, and leaves out, with a
 warning, anything GitHub reports that the owner doesn't have. When GitHub
@@ -471,7 +470,7 @@ workflow permissions, retention, and cache limits, stay in `actions`.
 
 A reusable definition holds exactly one policy name in `actions_policies`,
 with an optional draft of the same name and an optional owner type. It cannot
-manage other sections or extend another file. Its file path identifies it.
+manage other sections. Its file path identifies it.
 
 ```yaml
 # release.yaml
@@ -508,16 +507,15 @@ definition does not delete live configuration.
 A profile references several definitions without copying their contents:
 
 ```yaml
-extends: base.yaml
 references:
   actions_policies: [publish.yaml, quality.yaml, release.yaml]
 actions:
   default_workflow_permissions: read
 ```
 
-Paths resolve from the file containing the reference. Base profiles apply
-first, then referenced policies, then inline policies, then staged one-off
-edits. A policy replaces a policy of the same name whole. Two referenced
+Paths resolve from the file containing the reference. Profiles applied
+before this one come first, then its referenced policies, then its inline
+policies, then staged one-off edits. A policy replaces a policy of the same name whole. Two referenced
 definitions in one profile cannot supply the same policy name. Ordered profile combinations
 apply each profile's references at that profile's position. The source display
 identifies the definition supplying each value. Editing an inline value or
