@@ -1531,7 +1531,10 @@ test('importing a profile with reusable items asks how to keep them', async ({ p
   const continuing = dialog.getByRole('button', { name: 'Continue', exact: true });
   await expect(dialog.getByRole('textbox')).toHaveValue('Main');
   await expect(continuing).toBeDisabled();
-  await dialog.getByRole('textbox').fill('Main imported');
+  // Typed a letter at a time, since the field must stay once the name is free.
+  await dialog.getByRole('textbox').press('End');
+  await dialog.getByRole('textbox').pressSequentially(' imported');
+  await expect(dialog.getByRole('textbox')).toHaveValue('Main imported');
   await expect(continuing).toBeEnabled();
   await continuing.click();
   await expect(page.getByText(/^With 2 new reusable items/u)).toBeVisible();

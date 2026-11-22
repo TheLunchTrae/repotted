@@ -217,18 +217,45 @@ export function withBundledInside(imported: ProfileImport): string {
     const list = new YAMLSeq();
     list.items = items;
     document.set(section, list);
-    const unset = definitions.flatMap((item) => {
+    // An unset of an entry the profile replaces inline did nothing in the definition, so it is left out.
+    const replacedInline = new Set(
+      inlineKeys.filter((key, index) => used.has(index) && key?.startsWith('entry:') === true),
+    );
+    const unsetKey = (key: string): string | undefined =>
+      key.startsWith(`${section}/`) ? entryKey(section, { name: key.slice(section.length + 1) }) : undefined;
+    const ownUnset = valueOf(document.getIn(['drafts', 'unset']));
+    const known = new Set(
+      (Array.isArray(ownUnset) ? (ownUnset as unknown[]) : []).flatMap((key) =>
+        typeof key === 'string' ? [unsetKey(key) ?? key] : [],
+      ),
+    );
+    for (const item of definitions) {
       const value: unknown = parse(item.text);
       const drafts = isRecord(value) ? value['drafts'] : undefined;
       const keys = isRecord(drafts) ? drafts['unset'] : undefined;
-      return Array.isArray(keys) ? keys.filter((key): key is string => typeof key === 'string') : [];
-    });
-    const ownUnset: unknown = document.getIn(['drafts', 'unset']);
-    const known = new Set(Array.isArray(ownUnset) ? ownUnset : []);
-    for (const key of unset.filter((item) => !known.has(item))) {
-      known.add(key);
-      document.addIn(['drafts', 'unset'], key);
+      for (const key of Array.isArray(keys) ? keys : []) {
+        const comparable = typeof key === 'string' ? (unsetKey(key) ?? key) : undefined;
+        if (comparable !== undefined && !known.has(comparable) && !replacedInline.has(comparable)) {
+          known.add(comparable);
+          document.addIn(['drafts', 'unset'], key);
+        }
+      }
     }
+  }
+  // A definition's owner type applies to the profile that references it, so one written in keeps it.
+  const owners = new Set(
+    imported.bundled.flatMap((item) => {
+      const value: unknown = parse(item.text);
+      return isRecord(value) && typeof value['owner_type'] === 'string' ? [value['owner_type']] : [];
+    }),
+  );
+  const ownOwner: unknown = document.get('owner_type');
+  const [owner] = owners;
+  if (owners.size > 1 || (owner !== undefined && ownOwner !== undefined && ownOwner !== owner)) {
+    throw new ProfileError("The profile's reusable definitions are for different owner types");
+  }
+  if (owner !== undefined && ownOwner === undefined) {
+    document.set('owner_type', owner);
   }
   const references = document.get('references', true);
   if (isMap(references)) {

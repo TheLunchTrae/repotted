@@ -120,6 +120,32 @@ test('an import with problems saves only once they are fixed', async () => {
   await profiles.startImport('service.yaml', 'references:\n  rulesets: [./missing.yaml]\n');
   const editor = profiles.importing.value!.editor!;
   expect(editor.canSaveNewFile.value).toBe(false);
-  expect(await profiles.saveImport('service', '')).toBe('Fix the problems shown, or save it as a draft.');
+  expect(await profiles.saveImport('service', '')).toBe('Fix the problems shown.');
   expect(profiles.listings.value).toEqual([]);
+});
+
+test.each([false, true])(
+  'Save applies an imported draft, whether or not the import was changed (%s)',
+  async (changed) => {
+    const profiles = await setup();
+    await profiles.startImport('service.yaml', 'rulesets: [{ name: Main, draft: true, enforcement: active }]\n');
+    if (changed) {
+      await profiles.importing.value!.editor!.set(hasWiki, false);
+    }
+    expect(await profiles.saveImport('service', '')).toBeUndefined();
+    const saved = profiles.listings.value.find((listing) => listing.name === 'service')!;
+    const resolved = await resolveProfile(saved.file);
+    expect(resolved.profile.rulesets).toEqual([{ name: 'Main', enforcement: 'active' }]);
+    expect(resolved.drafts.rulesets).toBeUndefined();
+  },
+);
+
+test('a cancel while the import is staged leaves no import and no staged files', async () => {
+  const profiles = await setup();
+  await profiles.startImport('service.yaml', exported);
+  const choosing = profiles.chooseImport('reusable');
+  await profiles.cancelImport();
+  expect(await choosing).toBe('The import was cancelled.');
+  expect(profiles.importing.value).toBeUndefined();
+  await expect(files.readdir('/imports', { withFileTypes: true })).rejects.toThrow('ENOENT');
 });

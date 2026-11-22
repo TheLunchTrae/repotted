@@ -632,7 +632,16 @@ export function Profile({ listing, profiles, router, standalone, onSaved }: Prof
               onClick={() => {
                 run(
                   exportIt(async () => {
-                    const carried = await exportListing(profiles, listing);
+                    let carried: number;
+                    try {
+                      carried = await exportListing(profiles, listing);
+                    } catch (error) {
+                      notifications?.show({
+                        message: `Couldn't export ${listing.name}.yaml.`,
+                        detail: error instanceof Error ? error.message : String(error),
+                      });
+                      return;
+                    }
                     notifications?.show({
                       message:
                         carried === 0

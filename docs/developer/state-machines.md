@@ -176,8 +176,9 @@ other controls disabled by the same shared work queue.
 | Pending | Fulfill or reject | Release the lock and reset pending presentation if mounted; the owning operation reports its failure. |
 | Any     | Unmount           | Stop updating the control; let the owning operation finish normally.                                  |
 
-**Import** shows progress while it reads the chosen file. The sign-out question also remembers whether it is saving or discarding so
-only the chosen action shows progress. Pending buttons expose a busy state
+**Import** shows progress while it reads the chosen file. The sign-out
+question also remembers whether it is saving or discarding so only the
+chosen action shows progress. Pending buttons expose a busy state
 without losing focus, and reduced motion keeps their indicator static.
 
 ## Web repositories
@@ -1162,17 +1163,23 @@ outside every profiles folder, so nothing is listed or synced until it is
 saved. The staged files keep the profiles folder's layout, so the editor
 resolves references as it will once they are saved.
 
-| State                       | Event                                              | Next                                                                                                                                                         |
-| --------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| No import                   | A file is read into a library                      | A file that isn't YAML or JSON, isn't that library's kind, or carries definitions it doesn't reference is refused, and nothing is held.                      |
-| No import                   | A profile that carries definitions is read         | Waiting for the choice. `importedDefinitions` says which are new, which match a definition already there, and which take a name another definition has.      |
-| No import or choice waiting | Any other file is read, or the choice is made      | Staged, with its editor open on the staged file. Carried definitions kept inside are written into the profile; those saved as reusable are staged beside it. |
-| Staged                      | Edit                                               | Ordinary unsaved changes in the import's editor. Leaving its page asks first; source changes and sign-out don't count it.                                    |
-| Staged                      | Save, or save as a draft                           | The editor saves to the staged file, then, in the profiles' queue after a sync, the import is written under the name and folder given, never over a file.    |
-| Saving                      | A definition's name is taken by another definition | Nothing is written; the import stays staged for another name.                                                                                                |
-| Saving                      | The name is taken, or a write fails                | The definitions written in this attempt are removed, and the import stays staged.                                                                            |
-| Saving                      | Written                                            | No import. The staging folder is removed, and the profile or definition is listed.                                                                           |
-| Staged or choice waiting    | Cancel, leaving the page, or a source change       | No import.                                                                                                                                                   |
+| State                       | Event                                               | Next                                                                                                                                                                                                             |
+| --------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No import                   | A file is read into a library                       | A file that isn't YAML or JSON, isn't that library's kind, or carries definitions it doesn't reference is refused, and nothing is held.                                                                          |
+| No import                   | A profile that carries definitions is read          | Waiting for the choice. `importedDefinitions` says which are new, which match a definition already there, and which take a name another definition has.                                                          |
+| No import or choice waiting | Any other file is read, or the choice is made       | Staged, with its editor open on the staged file. Carried definitions kept inside are written into the profile; those saved as reusable are staged beside it.                                                     |
+| Staged                      | Edit                                                | Ordinary unsaved changes in the import's editor. Leaving its page asks first; source changes and sign-out don't count it.                                                                                        |
+| Choice waiting              | A rename                                            | The definitions are placed again, so the field shows whether its name is now free.                                                                                                                               |
+| Staging                     | Cancel, or Escape                                   | Refused until the import is staged.                                                                                                                                                                              |
+| Staged                      | Save                                                | The editor saves its changes and the file's drafts so they apply, as an editor's Save does, then, in the profiles' queue after a sync, the import is written under the name and folder given, never over a file. |
+| Staged                      | Save as draft                                       | The same, with the changes kept in the draft and the file's drafts left as they are.                                                                                                                             |
+| Staged                      | Save while a save runs                              | The same save.                                                                                                                                                                                                   |
+| Saving                      | Profiles are kept elsewhere now                     | Nothing is written, and the import stays staged.                                                                                                                                                                 |
+| Saving                      | A definition of the same name arrived since staging | One with the same settings is used. One with other settings refuses the save; the import stays staged, and Cancel and import again gives it another name.                                                        |
+| Saving                      | The name is taken, or a write fails                 | The definitions written in this attempt are removed, and the import stays staged.                                                                                                                                |
+| Saving                      | Written                                             | No import. The staging folder is removed, and the profile or definition is listed.                                                                                                                               |
+| Staged, staging, or saving  | Cancel, or leaving the page                         | No import. Staging or saving under way finishes first, so a save either adds the import or takes back what it wrote; then the staging folder goes.                                                               |
+| Staged or choice waiting    | A source change                                     | No import. The staging folder stays until the next import empties it.                                                                                                                                            |
 
 ## Web deleting a profile
 

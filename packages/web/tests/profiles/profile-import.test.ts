@@ -85,7 +85,7 @@ test('a taken name refuses to save until the definition is renamed', async () =>
   );
   const staged = await stage('reusable');
   expect(staged.definitions[0]?.state).toBe('taken');
-  await expect(saveStagedImport(staged)).rejects.toThrow('Rename main');
+  await expect(saveStagedImport(staged)).rejects.toThrow('A different definition named main is already there.');
   await expect(files.readFile('/profiles/apps/service.yaml', 'utf8')).rejects.toThrow('ENOENT');
 
   const renamed = await stage('reusable', { '../definitions/ruleset/main.yaml': 'imported main' });
@@ -112,4 +112,41 @@ test('a profile already at the destination is kept, and the definitions written 
   await expect(saveStagedImport(staged)).rejects.toThrow('apps/service.yaml is already there.');
   expect(await files.readFile('/profiles/apps/service.yaml', 'utf8')).toBe('repository: { has_issues: true }\n');
   await expect(files.readFile('/profiles/definitions/ruleset/main.yaml', 'utf8')).rejects.toThrow('ENOENT');
+});
+
+test('a definition of the same name that arrives after staging is used when its settings match, and refused when not', async () => {
+  const staged = await stage('reusable');
+  await write(
+    '/profiles/definitions/ruleset/Main.yaml',
+    'kind: ruleset\nrulesets: [{ name: Main, enforcement: active }]\n',
+  );
+  await saveStagedImport(staged);
+  expect(parse(await files.readFile('/profiles/apps/service.yaml', 'utf8'))).toMatchObject({
+    references: { rulesets: ['../definitions/ruleset/Main.yaml'] },
+  });
+  await expect(files.readFile('/profiles/definitions/ruleset/main.yaml', 'utf8')).rejects.toThrow('ENOENT');
+
+  const again = await stage('reusable', { '../definitions/ruleset/main.yaml': 'other' });
+  await write(
+    '/profiles/definitions/ruleset/OTHER.yaml',
+    'kind: ruleset\nrulesets: [{ name: Main, enforcement: disabled }]\n',
+  );
+  await expect(saveStagedImport(again, '/profiles/apps/second.yaml')).rejects.toThrow(
+    'A different definition named other is already there.',
+  );
+  await expect(files.readFile('/profiles/apps/second.yaml', 'utf8')).rejects.toThrow('ENOENT');
+});
+
+test('a reference that is also an object key, such as constructor, keeps its own name', async () => {
+  const imported = readProfileImport(
+    'references: { rulesets: [constructor] }\nbundled:\n  constructor: { kind: ruleset, rulesets: [{ name: Main }] }\n',
+  );
+  const staged = await stageProfileImport({
+    folder,
+    staging,
+    destination: '/profiles/x.yaml',
+    imported,
+    choice: 'reusable',
+  });
+  expect(staged.definitions.map((item) => item.name)).toEqual(['constructor']);
 });

@@ -155,7 +155,6 @@ async function profileFiles(folder: string, prefix = ''): Promise<string[]> {
   return files;
 }
 
-/** Syncs and changes to the folder take turns, so a sync never reads a folder that is being changed. */
 /** Outside every profiles folder, so nothing staged is listed or synced. */
 const importStaging = '/imports';
 
@@ -174,6 +173,7 @@ export interface ImportInProgress {
   readonly editor?: ProfileEditor;
 }
 
+/** Syncs and changes to the folder take turns, so a sync never reads a folder that is being changed. */
 export class Profiles {
   readonly source = signal<ProfilesSource>({ kind: 'browser' });
   readonly sync = signal<SyncState>({ status: 'none' });
@@ -198,6 +198,8 @@ export class Profiles {
   >(undefined);
   readonly opened = signal<{ readonly file: string; readonly text: string } | undefined>(undefined);
   readonly importing = signal<ImportInProgress | undefined>(undefined);
+  /** Staging or saving the import, which a cancel waits for before it removes the staging folder. */
+  #importWork: Promise<string | undefined> | undefined;
 
   readonly #github: GitHub;
   readonly #preferences: Preferences;
@@ -733,7 +735,7 @@ export class Profiles {
       try {
         const parsed = await parseProfile(text, dirname(file));
         if (profile.definitionKind !== undefined && parsed.kind !== profile.definitionKind) {
-          throw new Error(`Import a ${profile.definitionKind} definition into this library.`);
+          throw new Error(`Choose a ${profile.definitionKind} definition for this library.`);
         }
         await mkdir(dirname(file), { recursive: true });
         await writeFile(file, text, { flag: 'wx' });
@@ -1105,68 +1107,85 @@ export class Profiles {
     return imported === undefined ? [] : placeBundledDefinitions(this.folder.value, imported, names);
   }
 
-  /** Stages the import and opens its editor; `names` renames carried definitions by their reference. */
-  async chooseImport(choice: BundledChoice, names?: Readonly<Record<string, string>>): Promise<string | undefined> {
-    const importing = this.importing.value;
-    if (importing === undefined) {
-      return 'Choose a file to import.';
-    }
-    const library = definitionTypes.find((item) => item.kind === importing.imported.kind);
-    const folder = this.folder.value;
-    let staged: StagedImport;
-    try {
-      staged = await stageProfileImport({
-        folder,
-        staging: importStaging,
-        destination: join(
+  /**
+   * Stages the import and opens its editor; `names` renames carried
+   * definitions by their reference. A cancel meanwhile leaves no import.
+   */
+  chooseImport(choice: BundledChoice, names?: Readonly<Record<string, string>>): Promise<string | undefined> {
+    return this.#importTask(async () => {
+      const importing = this.importing.value;
+      if (importing === undefined) {
+        return 'Choose a file to import.';
+      }
+      const library = definitionTypes.find((item) => item.kind === importing.imported.kind);
+      const folder = this.folder.value;
+      let staged: StagedImport;
+      try {
+        staged = await stageProfileImport({
           folder,
-          ...(library === undefined ? [] : ['definitions', library.kind]),
-          `${importing.name}.yaml`,
-        ),
-        imported: importing.imported,
-        choice,
-        ...(names === undefined ? {} : { names }),
-      });
-    } catch (error) {
-      return messageOf(error);
-    }
-    // The editor saves to the staged file only; adding it to the profiles folder waits for saveImport.
-    const editor = new ProfileEditor(staged.file, this.#githubChecks(), profileStore);
-    await editor.load();
-    if (this.importing.value !== importing) {
+          staging: importStaging,
+          destination: join(
+            folder,
+            ...(library === undefined ? [] : ['definitions', library.kind]),
+            `${importing.name}.yaml`,
+          ),
+          imported: importing.imported,
+          choice,
+          ...(names === undefined ? {} : { names }),
+        });
+      } catch (error) {
+        return messageOf(error);
+      }
+      // The editor saves to the staged file only; adding it to the profiles folder waits for saveImport.
+      const editor = new ProfileEditor(staged.file, this.#githubChecks(), profileStore);
+      await editor.load();
+      if (this.importing.value !== importing) {
+        return 'The import was cancelled.';
+      }
+      this.importing.value = { ...importing, staged, editor };
       return undefined;
-    }
-    this.importing.value = { ...importing, staged, editor };
-    return undefined;
+    });
   }
 
   /**
    * Saves the editor's changes, so they apply or as a draft, then adds the
    * import under `name` in `folder`, with the definitions it saves as
-   * reusable. It needs what saving the editor would, with or without changes.
+   * reusable. Save applies the file's drafts with the changes, as an
+   * editor's Save does, and Save as draft keeps them all as drafts. A second
+   * save while one runs is the same save.
    */
-  async saveImport(name: string, folder: string, mode: SaveMode = 'applies'): Promise<string | undefined> {
+  saveImport(name: string, folder: string, mode: SaveMode = 'applies'): Promise<string | undefined> {
+    return this.#importWork ?? this.#importTask(() => this.#saveImport(name, folder, mode));
+  }
+
+  async #saveImport(name: string, folder: string, mode: SaveMode): Promise<string | undefined> {
     const importing = this.importing.value;
     if (importing?.staged === undefined || importing.editor === undefined) {
       return 'Choose a file to import.';
     }
     const { staged, editor } = importing;
-    if (editor.dirty.value) {
+    if (mode === 'applies' ? editor.canSave.value : editor.dirty.value) {
       await editor.save((work) => work(), mode);
-      if (editor.dirty.peek()) {
-        return editor.saveError.value ?? "The changes can't be saved as they stand.";
+      const unsaved = editor.saveError.peek();
+      if (unsaved !== undefined || editor.dirty.peek()) {
+        return unsaved ?? "The changes can't be saved as they stand.";
       }
     }
     if (editor.loadError.value !== undefined) {
       return editor.loadError.value;
     }
     if (!(mode === 'applies' ? editor.canSaveNewFile.value : editor.canSaveNewFileAsDraft.value)) {
-      return mode === 'applies' ? 'Fix the problems shown, or save it as a draft.' : 'Fix the problems shown.';
+      return mode === 'applies' && editor.canSaveNewFileAsDraft.value
+        ? 'Fix the problems shown, or save it as a draft.'
+        : 'Fix the problems shown.';
     }
     let failed: string | undefined;
     await this.#write(async () => {
-      // After the sync, which may have brought in a profile of that name.
-      failed = this.nameProblem(name, folder) ?? folderProblem(folder);
+      // After the sync, which may have brought in a profile of that name, or with the profiles kept elsewhere.
+      failed =
+        this.folder.value === staged.folder
+          ? (this.nameProblem(name, folder) ?? folderProblem(folder))
+          : 'Where profiles are kept changed, so the import was not added.';
       if (failed === undefined) {
         await saveStagedImport(staged, this.#fileOf(name.trim(), folder)).catch((error: unknown) => {
           failed = messageOf(error);
@@ -1177,6 +1196,18 @@ export class Profiles {
       this.importing.value = undefined;
     }
     return failed;
+  }
+
+  async #importTask(work: () => Promise<string | undefined>): Promise<string | undefined> {
+    const running = work();
+    this.#importWork = running;
+    try {
+      return await running;
+    } finally {
+      if (this.#importWork === running) {
+        this.#importWork = undefined;
+      }
+    }
   }
 
   /** The import's file as its editor last saved it. */
@@ -1190,9 +1221,14 @@ export class Profiles {
     return exportProfile(listing.file);
   }
 
+  /** Once what is staging or saving it ends, so a save that is writing finishes or takes back what it wrote. */
   async cancelImport(): Promise<void> {
     this.importing.value = undefined;
-    await rm(importStaging, { recursive: true, force: true });
+    await this.#importWork;
+    // A file chosen meanwhile is staged there now.
+    if (this.importing.peek() === undefined) {
+      await rm(importStaging, { recursive: true, force: true });
+    }
   }
 
   async select(listing: ProfileListing | undefined): Promise<void> {

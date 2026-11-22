@@ -59,6 +59,8 @@ function ReusableChoice({ profiles, onChosen }: { readonly profiles: Profiles; r
   const [choice, setChoice] = useState<BundledChoice>('reusable');
   const [names, setNames] = useState<Readonly<Record<string, string>>>({});
   const [placed, setPlaced] = useState<readonly ImportedDefinition[]>([]);
+  // A name field stays while its name is typed, though the name it has is free once the first letter is.
+  const renaming = useRef(new Set<string>());
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const [continuing, carryOn] = usePendingAction();
   useEffect(() => {
@@ -69,6 +71,9 @@ function ReusableChoice({ profiles, onChosen }: { readonly profiles: Profiles; r
     profiles.importedDefinitions(names).then(
       (found) => {
         if (current) {
+          for (const item of found.filter((each) => each.state === 'taken')) {
+            renaming.current.add(item.bundled.reference);
+          }
           setPlaced(found);
           setProblem(undefined);
         }
@@ -83,14 +88,19 @@ function ReusableChoice({ profiles, onChosen }: { readonly profiles: Profiles; r
       current = false;
     };
   }, [profiles, names]);
-  const there = placed.filter((item) => item.state !== 'new');
+  const there = placed.filter((item) => item.state !== 'new' || renaming.current.has(item.bundled.reference));
   const taken = placed.some((item) => item.state === 'taken');
   return (
     <dialog
       class="dialog"
       ref={dialog}
       aria-labelledby="reusable-choice-heading"
-      onCancel={() => {
+      onCancel={(event) => {
+        // Staging under way finishes into an import that Cancel would then have to undo.
+        if (continuing) {
+          event.preventDefault();
+          return;
+        }
         run(profiles.cancelImport());
       }}
     >
@@ -164,7 +174,7 @@ function ReusableChoice({ profiles, onChosen }: { readonly profiles: Profiles; r
             <ul>
               {there.map((item) => (
                 <li key={item.bundled.reference}>
-                  {item.state === 'same' ? (
+                  {item.state === 'same' && !renaming.current.has(item.bundled.reference) ? (
                     <>
                       <strong>{item.name}</strong> has the same settings, so the profile uses the one you have.
                     </>
@@ -181,6 +191,12 @@ function ReusableChoice({ profiles, onChosen }: { readonly profiles: Profiles; r
                           setNames({ ...names, [item.bundled.reference]: event.currentTarget.value });
                         }}
                       />
+                      {item.state === 'taken' && <span class="problem small">A different one has this name.</span>}
+                      {item.state === 'same' && (
+                        <span class="muted small">
+                          One with the same settings has this name, so the profile uses it.
+                        </span>
+                      )}
                     </label>
                   )}
                 </li>
@@ -205,6 +221,7 @@ function ReusableChoice({ profiles, onChosen }: { readonly profiles: Profiles; r
           <button
             class="button button-quiet"
             type="button"
+            disabled={continuing}
             onClick={() => {
               dialog.current?.close();
               run(profiles.cancelImport());

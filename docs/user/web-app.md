@@ -913,13 +913,15 @@ asks how to keep them:
   used instead of a copy. One with other settings needs another name,
   which you enter there.
 - **Keep in the profile**: their settings are written into the profile,
-  and nothing is added to the libraries.
+  and nothing is added to the libraries. A definition for one owner type
+  makes the profile for that type, as using it did.
 
 The file then opens on its own page, marked **Not saved yet**, with the
 usual settings and their problems. Choose its **Name** and **Folder** and
-change anything you want. **Save** adds it, and **Save as draft** adds it
-with your changes kept as a draft; either returns to the list it was
-imported from. Nothing is added until then, and leaving the page asks
+change anything you want. **Save** adds it, with any drafts it has
+applying, as **Save** does on any profile. **Save as draft** adds it with
+your changes kept as a draft and its own drafts left as drafts. Either
+returns to the list it was imported from. Nothing is added until then, and leaving the page asks
 before it discards the import. Repotted never replaces a file that is
 already there.
 

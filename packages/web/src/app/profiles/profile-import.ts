@@ -81,12 +81,6 @@ async function placed(folder: string, bundled: BundledDefinition, name: string):
   return { bundled, name: name.trim(), file, state: same ? 'same' : 'taken' };
 }
 
-/**
- * Lays the import out under `staging`, which it empties first. `names`
- * renames definitions by their reference, for those whose name is taken.
- * References the import carries no file for keep naming the files they
- * name from `destination`.
- */
 /** Where each carried definition would be saved, by its reference's name or the one `names` gives it. */
 export async function placeBundledDefinitions(
   folder: string,
@@ -95,7 +89,7 @@ export async function placeBundledDefinitions(
 ): Promise<ImportedDefinition[]> {
   const definitions: ImportedDefinition[] = [];
   for (const bundled of imported.bundled) {
-    const name = names[bundled.reference] ?? bundled.name;
+    const name = Object.hasOwn(names, bundled.reference) ? (names[bundled.reference] ?? bundled.name) : bundled.name;
     const problem = profileNameProblem(name, 'reusable definition');
     if (problem !== undefined) {
       throw new Error(problem);
@@ -109,6 +103,12 @@ export async function placeBundledDefinitions(
   return definitions;
 }
 
+/**
+ * Lays the import out under `staging`, which it empties first. `names`
+ * renames definitions by their reference, for those whose name is taken.
+ * References the import carries no file for keep naming the files they
+ * name from `destination`.
+ */
 export async function stageProfileImport(options: {
   readonly folder: string;
   readonly staging: string;
@@ -155,18 +155,33 @@ export async function stageProfileImport(options: {
  * of it is written.
  */
 export async function saveStagedImport(staged: StagedImport, destination = staged.destination): Promise<void> {
-  const taken = staged.definitions.filter((item) => item.state === 'taken');
+  // Placed again, since a sync may have brought in a definition of the same name since the import was staged.
+  const definitions = await Promise.all(
+    staged.definitions.map((item) =>
+      item.state === 'new'
+        ? placed(staged.folder, item.bundled, item.name).then((now) => ({ item, now }))
+        : Promise.resolve({ item, now: item }),
+    ),
+  );
+  const taken = definitions.filter(({ now }) => now.state === 'taken');
   if (taken.length > 0) {
     throw new Error(
-      `Rename ${taken.map((item) => item.name).join(', ')}: a different definition of that name is already there.`,
+      `A different definition named ${taken.map(({ now }) => now.name).join(', ')} is already there. Cancel and import the file again to give it another name.`,
     );
   }
+  // A new definition goes where it was staged for, or to the one of the same settings that is there now.
+  const moved = new Map(
+    definitions
+      .filter(({ item }) => item.state === 'new')
+      .map(({ item, now }) => [join(staged.staging, relative(staged.folder, item.file)), now.file] as const),
+  );
   const fromStaging = (target: string): string =>
-    under(staged.staging, target) ? join(staged.folder, relative(staged.staging, target)) : target;
+    moved.get(target) ??
+    (under(staged.staging, target) ? join(staged.folder, relative(staged.staging, target)) : target);
   const text = reRooted(await readFile(staged.file, 'utf8'), dirname(staged.file), dirname(destination), fromStaging);
-  const writes = staged.definitions
-    .filter((item) => item.state === 'new')
-    .map((item) => ({ from: join(staged.staging, relative(staged.folder, item.file)), to: item.file }));
+  const writes = definitions
+    .filter(({ item, now }) => item.state === 'new' && now.state === 'new')
+    .map(({ item, now }) => ({ from: join(staged.staging, relative(staged.folder, item.file)), to: now.file }));
   const created: string[] = [];
   let writing = destination;
   try {

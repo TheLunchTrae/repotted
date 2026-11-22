@@ -22,7 +22,7 @@ await write(
 );
 await write(
   'definitions/ruleset/tags.yaml',
-  'kind: ruleset\nrulesets: [{ name: Tags, enforcement: active, target: tag }]\n',
+  'kind: ruleset\nowner_type: organization\nrulesets: [{ name: Tags, enforcement: active, target: tag }]\n',
 );
 await write(
   'definitions/environment/production.yaml',
@@ -98,6 +98,21 @@ describe('an exported profile', () => {
     const broken = await write('broken.yaml', 'references: { rulesets: [./missing.yaml] }\n');
     await expect(exportProfile(broken)).rejects.toThrow('Cannot read reusable definition ./missing.yaml');
   });
+});
+
+test('drafts that stop managing an entry are written in once, by the name GitHub matches', async () => {
+  await write(
+    'definitions/environment/staging.yaml',
+    'kind: environment\nenvironments: [{ name: Staging }]\ndrafts: { unset: [environments/staging] }\n',
+  );
+  const file = await write(
+    'apps/unsets.yaml',
+    'references: { environments: [../definitions/environment/staging.yaml] }\ndrafts: { unset: [environments/STAGING] }\n',
+  );
+  const before = await resolveProfile(file);
+  const after = await parseProfile(withBundledInside(readProfileImport(await exportProfile(file))), folder);
+  expect(after.drafts).toEqual(before.drafts);
+  expect(after.profile).toEqual(before.profile);
 });
 
 describe('an imported file', () => {
