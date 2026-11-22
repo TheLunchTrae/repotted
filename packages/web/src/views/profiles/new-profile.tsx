@@ -41,19 +41,16 @@ export function NewProfileForm({
   const captured = repositories.list.value?.repositories ?? [];
   const library = definitionTypes.find((item) => item.kind === definitionKind);
   const [targetName, setTargetName] = useState('');
-  const [importText, setImportText] = useState('');
   const [name, setName] = useState('');
   const [folder, setFolder] = useState(profiles.selected.value?.folder ?? '');
   const [kind, setKind] = useState<NewProfileStart['kind']>(repositoryToCapture === undefined ? 'empty' : 'repository');
   const [pickedSource, setSourceFile] = useState<string | undefined>(undefined);
   const [pickedFrom, setFrom] = useState(repositoryToCapture);
   const [owner, setOwner] = useState<OwnerChoice>('any');
-  const [readingFile, setReadingFile] = useState(false);
   const [creating, createProfile] = usePendingAction();
-  const working = readingFile || creating;
+  const working = creating;
   const [error, setError] = useState<string | undefined>(undefined);
   const formClosed = useRef(new AbortController());
-  const importRead = useRef(0);
   useEffect(
     () => () => {
       formClosed.current.abort();
@@ -68,15 +65,13 @@ export function NewProfileForm({
   const start: NewProfileStart | undefined =
     kind === 'empty'
       ? { kind }
-      : kind === 'import'
-        ? { kind, text: importText }
-        : kind === 'duplicate'
-          ? source === undefined
-            ? undefined
-            : { kind, source }
-          : from === ''
-            ? undefined
-            : { kind, repository: from };
+      : kind === 'duplicate'
+        ? source === undefined
+          ? undefined
+          : { kind, source }
+        : from === ''
+          ? undefined
+          : { kind, repository: from };
   const fixedOwner = kind === 'repository' ? "The repository's owner sets the type." : undefined;
   // Ordinary creation finishes once the form is gone, but a capture stops with it.
   useLeaveQuestion(router, () =>
@@ -84,7 +79,7 @@ export function NewProfileForm({
       ? kind === 'repository'
         ? { kind: 'capture', repository: from }
         : undefined
-      : name.trim() !== '' || targetName.trim() !== '' || importText !== ''
+      : name.trim() !== '' || targetName.trim() !== ''
         ? { kind: 'new-profile', name: name.trim() }
         : undefined,
   );
@@ -285,41 +280,6 @@ export function NewProfileForm({
           ))}
         </select>
       </label>
-      <label class="form-field">
-        <span>Import YAML file</span>
-        <input
-          type="file"
-          accept=".yaml,.yml"
-          disabled={working}
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0];
-            if (file !== undefined) {
-              const request = ++importRead.current;
-              setReadingFile(true);
-              setKind('import');
-              setImportText('');
-              run(
-                file.text().then(
-                  (text) => {
-                    if (formClosed.current.signal.aborted || importRead.current !== request) {
-                      return;
-                    }
-                    setImportText(text);
-                    setReadingFile(false);
-                  },
-                  (error: unknown) => {
-                    if (formClosed.current.signal.aborted || importRead.current !== request) {
-                      return;
-                    }
-                    setError(error instanceof Error ? error.message : String(error));
-                    setReadingFile(false);
-                  },
-                ),
-              );
-            }
-          }}
-        />
-      </label>
       <fieldset class="choices" disabled={working || fixedOwner !== undefined}>
         <legend>For repositories owned by</legend>
         {fixedOwner === undefined ? (
@@ -353,7 +313,7 @@ export function NewProfileForm({
           pending={creating}
           class="button button-primary"
           type="submit"
-          disabled={working || (kind === 'import' && importText === '') || problem !== undefined || start === undefined}
+          disabled={working || problem !== undefined || start === undefined}
         >
           {kind === 'repository' ? 'Capture' : library === undefined ? 'Create' : 'Create definition'}
         </PendingButton>

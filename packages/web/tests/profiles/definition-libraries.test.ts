@@ -167,7 +167,7 @@ test('deleting a stale definition cannot delete a profile that replaced it', asy
   expect(await readFile(definition.file, 'utf8')).toBe('repository: { has_wiki: false }\n');
 });
 
-test.each(['duplicate', 'import'] as const)('%s preserves existing shared references', async (kind) => {
+test('duplicate preserves existing shared references', async () => {
   const kept = await setup();
   await kept.create({
     name: 'approved',
@@ -189,12 +189,11 @@ test.each(['duplicate', 'import'] as const)('%s preserves existing shared refere
     environments: ['../definitions/production.yaml'],
   });
   await kept.save();
-  const text = await readFile(source.file, 'utf8');
   expect(
     await kept.create({
       name: 'Copy',
       folder: 'copies',
-      start: kind === 'duplicate' ? { kind, source } : { kind, text },
+      start: { kind: 'duplicate', source },
       ownerType: undefined,
     }),
   ).toBeUndefined();

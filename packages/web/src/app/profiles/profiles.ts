@@ -16,6 +16,7 @@ import {
   type ProfileImport,
   readInstallationSettingsUrl,
   readProfileImport,
+  exportProfile,
   stringifyProfile,
   syncFolder,
 } from '@repotted/core';
@@ -68,8 +69,7 @@ export type SyncState =
 export type NewProfileStart =
   | { readonly kind: 'empty' }
   | { readonly kind: 'repository'; readonly repository: string }
-  | { readonly kind: 'duplicate'; readonly source: ProfileListing }
-  | { readonly kind: 'import'; readonly text: string };
+  | { readonly kind: 'duplicate'; readonly source: ProfileListing };
 
 export interface NewProfile {
   readonly name: string;
@@ -165,6 +165,8 @@ const importStaging = '/imports';
  * on it until `saveImport` adds it or `cancelImport` drops it.
  */
 export interface ImportInProgress {
+  /** The name of the file chosen. */
+  readonly file: string;
   /** The file's name without its extension, which the import is saved as unless renamed. */
   readonly name: string;
   readonly imported: ProfileImport;
@@ -698,8 +700,6 @@ export class Profiles {
       } catch (error) {
         return messageOf(error);
       }
-    } else if (profile.start.kind === 'import') {
-      text = profile.start.text;
     } else {
       const owner = profile.ownerType === undefined ? '' : `owner_type: ${profile.ownerType}\n`;
       text =
@@ -1091,7 +1091,11 @@ export class Profiles {
         ? 'This is a reusable definition. Import it from its own page.'
         : `Import a ${wanted.label.toLowerCase()} here.`;
     }
-    this.importing.value = { name: basename(fileName).replace(/\.(ya?ml|json)$/iu, ''), imported };
+    this.importing.value = {
+      file: basename(fileName),
+      name: basename(fileName).replace(/\.(ya?ml|json)$/iu, ''),
+      imported,
+    };
     return imported.bundled.length > 0 ? undefined : this.chooseImport('inside');
   }
 
@@ -1139,7 +1143,7 @@ export class Profiles {
   /**
    * Saves the editor's changes, so they apply or as a draft, then adds the
    * import under `name` in `folder`, with the definitions it saves as
-   * reusable. Saving so it applies needs a profile with no problems.
+   * reusable. It needs what saving the editor would, with or without changes.
    */
   async saveImport(name: string, folder: string, mode: SaveMode = 'applies'): Promise<string | undefined> {
     const importing = this.importing.value;
@@ -1156,8 +1160,8 @@ export class Profiles {
     if (editor.loadError.value !== undefined) {
       return editor.loadError.value;
     }
-    if (mode === 'applies' && editor.configurationProblems.value.length > 0) {
-      return 'Fix the problems shown, or save it as a draft.';
+    if (!(mode === 'applies' ? editor.canSaveNewFile.value : editor.canSaveNewFileAsDraft.value)) {
+      return mode === 'applies' ? 'Fix the problems shown, or save it as a draft.' : 'Fix the problems shown.';
     }
     let failed: string | undefined;
     await this.#write(async () => {
@@ -1173,6 +1177,17 @@ export class Profiles {
       this.importing.value = undefined;
     }
     return failed;
+  }
+
+  /** The import's file as its editor last saved it. */
+  async importedText(): Promise<string | undefined> {
+    const file = this.importing.value?.staged?.file;
+    return file === undefined ? undefined : readFile(file, 'utf8');
+  }
+
+  /** The file as it is saved, with each definition a profile references carried in it. */
+  exported(listing: ProfileListing): Promise<string> {
+    return exportProfile(listing.file);
   }
 
   async cancelImport(): Promise<void> {

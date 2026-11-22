@@ -36,7 +36,8 @@ export type LeaveQuestion =
       readonly savable: boolean;
     }
   | { readonly kind: 'capture'; readonly repository: string }
-  | { readonly kind: 'new-profile'; readonly name: string };
+  | { readonly kind: 'new-profile'; readonly name: string }
+  | { readonly kind: 'import'; readonly name: string };
 
 interface GoOptions {
   /** A page link: the page opens at its top, not at what it last had open, even when it is the page shown. */

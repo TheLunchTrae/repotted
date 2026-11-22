@@ -669,18 +669,28 @@ export class ProfileEditor {
 
   readonly savedDraftWarnings = computed(() => this.#saved.value?.warnings ?? []);
 
+  /**
+   * Save would go through, even with nothing to save: what a file Repotted
+   * is adding, such as an import, needs, since adding it is the save.
+   */
+  readonly canSaveNewFile = computed(
+    () =>
+      this.repair.value === undefined &&
+      this.loaded.value &&
+      !this.#someTypedTextCannotBeAValue.value &&
+      !this.#entryEdits.someEntryCannotBeSavedToApply.value &&
+      this.configurationProblems.value.length === 0 &&
+      this.unsavedChangesProblem.value === undefined &&
+      this.reusableProblem.value === undefined &&
+      !this.saving.value,
+  );
+
   /** Save applies the unsaved changes and the draft together, so it needs one of them. */
   readonly canSave = computed(
     () =>
       this.repair.value?.canSave.value ??
-      (this.loaded.value &&
-        (this.#changed.value || this.draftCount.value > 0 || this.unknownFields.value.length > 0) &&
-        !this.#someTypedTextCannotBeAValue.value &&
-        !this.#entryEdits.someEntryCannotBeSavedToApply.value &&
-        this.configurationProblems.value.length === 0 &&
-        this.unsavedChangesProblem.value === undefined &&
-        this.reusableProblem.value === undefined &&
-        !this.saving.value),
+      (this.canSaveNewFile.value &&
+        (this.#changed.value || this.draftCount.value > 0 || this.unknownFields.value.length > 0)),
   );
 
   /**
@@ -835,15 +845,19 @@ export class ProfileEditor {
       : `${empty.label}: an empty value can't be kept in a draft. Save it, or reset it.`;
   });
 
-  readonly canSaveAsDraft = computed(
+  /** As `canSaveNewFile`, for saving as a draft. */
+  readonly canSaveNewFileAsDraft = computed(
     () =>
       this.canHoldDrafts &&
       this.loaded.value &&
       (this.#saved.value?.problems?.length ?? 0) === 0 &&
-      (this.#changed.value || this.unknownFields.value.length > 0) &&
       !this.#someTypedTextCannotBeAValue.value &&
       this.draftProblem.value === undefined &&
       !this.saving.value,
+  );
+
+  readonly canSaveAsDraft = computed(
+    () => this.canSaveNewFileAsDraft.value && (this.#changed.value || this.unknownFields.value.length > 0),
   );
 
   /** Discarding writes at once, so it waits until nothing unsaved would go with it. */

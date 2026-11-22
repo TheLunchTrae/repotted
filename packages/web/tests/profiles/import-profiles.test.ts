@@ -94,3 +94,32 @@ test('a library takes only its own kind of file', async () => {
   );
   expect(profiles.importing.value).toBeUndefined();
 });
+
+test('references the import carries no file keep naming the definitions already there from another folder', async () => {
+  const profiles = await setup();
+  await profiles.create({
+    name: 'Release',
+    definitionKind: 'actions-policy',
+    targetName: 'Release',
+    folder: 'definitions/actions-policy',
+    start: { kind: 'empty' },
+    ownerType: undefined,
+  });
+  const text = 'references:\n  actions_policies: [definitions/actions-policy/Release.yaml]\n';
+  await profiles.startImport('service.yaml', text);
+  expect(profiles.importing.value?.editor?.configurationProblems.value).toEqual([]);
+  expect(await profiles.saveImport('service', 'apps')).toBeUndefined();
+  const saved = profiles.listings.value.find((listing) => listing.name === 'service')!;
+  expect((await resolveProfile(saved.file)).references).toEqual({
+    actions_policies: ['../definitions/actions-policy/Release.yaml'],
+  });
+});
+
+test('an import with problems saves only once they are fixed', async () => {
+  const profiles = await setup();
+  await profiles.startImport('service.yaml', 'references:\n  rulesets: [./missing.yaml]\n');
+  const editor = profiles.importing.value!.editor!;
+  expect(editor.canSaveNewFile.value).toBe(false);
+  expect(await profiles.saveImport('service', '')).toBe('Fix the problems shown, or save it as a draft.');
+  expect(profiles.listings.value).toEqual([]);
+});

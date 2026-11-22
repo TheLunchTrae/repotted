@@ -9,7 +9,7 @@ import type { ProfileFolderNode, ProfileListing, Profiles } from '../../app/prof
 import type { Repositories } from '../../app/repositories/repositories.js';
 import { Link } from '../layout/link.js';
 import { Loading, LoadingList } from '../layout/loading.js';
-import { useProfileConfirmation } from '../layout/notifications.js';
+import { useNotifications, useProfileConfirmation } from '../layout/notifications.js';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
 import { run } from '../layout/run.js';
 import { useDismissibleMenu, useModal } from '../layout/shell.js';
@@ -17,6 +17,7 @@ import { InvalidProfile } from '../profile-editor/invalid-profile.js';
 import { ProfileSettings } from '../profile-editor/profile-editor.js';
 import { RepairProfile } from '../profile-editor/profile-repair.js';
 import { previewAddress, PreviewPicker } from './branch-preview.js';
+import { exportListing, ImportButton, ImportPage } from './import.js';
 import { NewProfileForm } from './new-profile.js';
 import { OwnerTypeDialog } from './owner-type.js';
 import { SyncNote } from './sync-note.js';
@@ -561,6 +562,8 @@ export function Profile({ listing, profiles, router, standalone, onSaved }: Prof
   const [showYaml, setShowYaml] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [changingOwner, setChangingOwner] = useState(false);
+  const [exporting, exportIt] = usePendingAction();
+  const notifications = useNotifications();
   const [landOn, setLandOn] = useState<EditorPlace | undefined>(undefined);
   const couldNotRead = profiles.settingsCaptureCouldNotRead.value;
   const editor = profiles.editor.value;
@@ -622,13 +625,26 @@ export function Profile({ listing, profiles, router, standalone, onSaved }: Prof
             {showYaml ? 'Hide YAML' : 'Show YAML'}
           </button>
           {opened?.file === listing.file && (
-            <a
+            <PendingButton
+              pending={exporting}
               class="button"
-              download={`${listing.name}.yaml`}
-              href={`data:application/yaml;charset=utf-8,${encodeURIComponent(opened.text)}`}
+              type="button"
+              onClick={() => {
+                run(
+                  exportIt(async () => {
+                    const carried = await exportListing(profiles, listing);
+                    notifications?.show({
+                      message:
+                        carried === 0
+                          ? `Exported ${listing.name}.yaml.`
+                          : `Exported ${listing.name}.yaml, with ${carried === 1 ? 'its reusable item' : `its ${carried} reusable items`} inside it.`,
+                    });
+                  }),
+                );
+              }}
             >
-              Export YAML
-            </a>
+              Export
+            </PendingButton>
           )}
           <button
             class="button"
@@ -832,8 +848,9 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
   const total = profiles.listings.value.filter((listing) => listing.kind === undefined).length;
   const shown = shownIn(tree);
   const everyShownProfileSelected = shown.length > 0 && shown.every((listing) => profiles.isInBatch(listing));
-  // The list and an open profile, or the new-profile form, are two screens.
-  const showing = newProfileForm !== undefined ? '/profiles/new' : selected?.file;
+  const importing = new URLSearchParams(router.search.value).has('import');
+  // The list and an open profile, the new-profile form, or an import, are two screens.
+  const showing = importing ? '/profiles?import' : newProfileForm !== undefined ? '/profiles/new' : selected?.file;
   const open = showing !== undefined;
   const [picking, setPicking] = useState(false);
   const [dialog, setDialog] = useState<ProfilesDialog | undefined>(undefined);
@@ -917,6 +934,17 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
       )}
     </>
   );
+
+  if (importing) {
+    return (
+      <div class="page profiles-open">
+        <div class="profiles-open-top">
+          <Banners profiles={profiles} />
+        </div>
+        <ImportPage profiles={profiles} router={router} kind={undefined} />
+      </div>
+    );
+  }
 
   if (open) {
     return (
@@ -1024,6 +1052,7 @@ export function ProfilesPage({ profiles, repositories, router, preview, newProfi
                 Preview
               </button>
             )}
+            <ImportButton profiles={profiles} router={router} kind={undefined} />
             <Link class="button button-primary" router={router} to="/profiles/new">
               New profile
             </Link>
