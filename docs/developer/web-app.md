@@ -396,7 +396,9 @@ staged files keep the profiles folder's layout, so references between them
 resolve as they will once saved, and references to files already there are
 rewritten from the staging folder and back. `Profiles.importing` holds the
 import and an ordinary `ProfileEditor` on the staged file, which saves only
-there; `Profiles.saveImport` then writes the import and its new definitions
+there. `Profiles.chooseImport` stages in a turn of the profiles' queue, so a
+sync can't change the libraries while the definitions are placed, and
+refuses a name another definition has. `Profiles.saveImport` then writes the import and its new definitions
 in the profiles' queue, never over a file, and removes what it wrote when a
 write fails. The editor's `canSaveNewFile` lets Save add the file without a
 change first. [Imports](state-machines.md#imports) has its states.

@@ -63,6 +63,13 @@ function ReusableChoice({ profiles, onChosen }: { readonly profiles: Profiles; r
   const renaming = useRef(new Set<string>());
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const [continuing, carryOn] = usePendingAction();
+  // Placed again after each sync, which may bring in a definition of a carried one's name.
+  const listings = profiles.listings.value;
+  const markRenaming = (found: readonly ImportedDefinition[]): void => {
+    for (const item of found.filter((each) => each.state === 'taken')) {
+      renaming.current.add(item.bundled.reference);
+    }
+  };
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -71,9 +78,7 @@ function ReusableChoice({ profiles, onChosen }: { readonly profiles: Profiles; r
     profiles.importedDefinitions(names).then(
       (found) => {
         if (current) {
-          for (const item of found.filter((each) => each.state === 'taken')) {
-            renaming.current.add(item.bundled.reference);
-          }
+          markRenaming(found);
           setPlaced(found);
           setProblem(undefined);
         }
@@ -87,7 +92,7 @@ function ReusableChoice({ profiles, onChosen }: { readonly profiles: Profiles; r
     return () => {
       current = false;
     };
-  }, [profiles, names]);
+  }, [profiles, names, listings]);
   const there = placed.filter((item) => item.state !== 'new' || renaming.current.has(item.bundled.reference));
   const taken = placed.some((item) => item.state === 'taken');
   return (
@@ -95,12 +100,7 @@ function ReusableChoice({ profiles, onChosen }: { readonly profiles: Profiles; r
       class="dialog"
       ref={dialog}
       aria-labelledby="reusable-choice-heading"
-      onCancel={(event) => {
-        // Staging under way finishes into an import that Cancel would then have to undo.
-        if (continuing) {
-          event.preventDefault();
-          return;
-        }
+      onCancel={() => {
         run(profiles.cancelImport());
       }}
     >
@@ -114,9 +114,18 @@ function ReusableChoice({ profiles, onChosen }: { readonly profiles: Profiles; r
               if (failure === undefined) {
                 dialog.current?.close();
                 onChosen();
-              } else {
-                setProblem(failure);
+                return;
               }
+              if (profiles.importing.peek() === undefined) {
+                return;
+              }
+              // A name taken since the definitions were last placed shows as its name field rather than the failure.
+              const found = await profiles.importedDefinitions(names).catch(() => undefined);
+              if (found !== undefined) {
+                markRenaming(found);
+                setPlaced(found);
+              }
+              setProblem(found?.some((item) => item.state === 'taken') === true ? undefined : failure);
             }),
           );
         }}
@@ -221,7 +230,6 @@ function ReusableChoice({ profiles, onChosen }: { readonly profiles: Profiles; r
           <button
             class="button button-quiet"
             type="button"
-            disabled={continuing}
             onClick={() => {
               dialog.current?.close();
               run(profiles.cancelImport());

@@ -138,6 +138,12 @@ const config: GitHub = {
   },
 };
 const fleet = new FakeFleet([app, ...others]);
+// Adds a file to the config repository on GitHub, as a push from elsewhere would.
+window.addEventListener('push-config-file', (event) => {
+  // eslint-disable-next-line typescript/no-unsafe-type-assertion -- only the layout test dispatches this event, always with this detail
+  const { path, text } = (event as CustomEvent<{ path: string; text: string }>).detail;
+  configFiles.write({ [path]: text });
+});
 
 const signedOut = new URLSearchParams(location.search).has('signed-out');
 const configReads = { fail: new URLSearchParams(location.search).has('fail-first-sync'), pending: Promise.resolve() };
@@ -156,6 +162,12 @@ if (new URLSearchParams(location.search).has('hold-github')) {
   holdRequests();
 }
 window.addEventListener('hold-github', holdRequests);
+// Writes a file into the browser's profiles folder without a sync, as another tab could between two reads.
+window.addEventListener('write-profile-file', (event) => {
+  // eslint-disable-next-line typescript/no-unsafe-type-assertion -- only the layout test dispatches this event, always with this detail
+  const { path, text } = (event as CustomEvent<{ path: string; text: string }>).detail;
+  run(writeFile(`/profiles/browser/${path}`, text));
+});
 const github: GitHub = signedOut
   ? { request: () => Promise.reject(answered(401, 'Bad credentials')) }
   : {

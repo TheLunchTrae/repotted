@@ -78,6 +78,24 @@ test('a definition already there with the same settings is used rather than copi
   });
 });
 
+test('a definition used at staging that is renamed in case before save is referenced by its new name', async () => {
+  await write(
+    '/profiles/definitions/ruleset/Main.yaml',
+    'kind: ruleset\nrulesets: [{ name: Main, enforcement: active }]\n',
+  );
+  const staged = await stage('reusable');
+  await files.rm('/profiles/definitions/ruleset/Main.yaml');
+  await write(
+    '/profiles/definitions/ruleset/main.yaml',
+    'kind: ruleset\nrulesets: [{ name: Main, enforcement: active }]\n',
+  );
+  await saveStagedImport(staged);
+  expect(parse(await files.readFile('/profiles/apps/service.yaml', 'utf8'))).toMatchObject({
+    references: { rulesets: ['../definitions/ruleset/main.yaml'] },
+  });
+  expect((await resolveProfile('/profiles/apps/service.yaml')).profile).toMatchObject(expected);
+});
+
 test('a definition matched at staging that is gone at save is refused', async () => {
   await write(
     '/profiles/definitions/ruleset/Main.yaml',
@@ -89,15 +107,13 @@ test('a definition matched at staging that is gone at save is refused', async ()
   await expect(files.readFile('/profiles/apps/service.yaml', 'utf8')).rejects.toThrow('ENOENT');
 });
 
-test('a taken name refuses to save until the definition is renamed', async () => {
+test('a taken name refuses to stage until the definition is renamed', async () => {
   await write(
     '/profiles/definitions/ruleset/main.yaml',
     'kind: ruleset\nrulesets: [{ name: Main, enforcement: disabled }]\n',
   );
-  const staged = await stage('reusable');
-  expect(staged.definitions[0]?.state).toBe('taken');
-  await expect(saveStagedImport(staged)).rejects.toThrow('A different definition named main is already there.');
-  await expect(files.readFile('/profiles/apps/service.yaml', 'utf8')).rejects.toThrow('ENOENT');
+  await expect(stage('reusable')).rejects.toThrow('A different definition named main is already there.');
+  await expect(files.readdir(staging, { withFileTypes: true })).rejects.toThrow('ENOENT');
 
   const renamed = await stage('reusable', { '../definitions/ruleset/main.yaml': 'imported main' });
   await saveStagedImport(renamed);
