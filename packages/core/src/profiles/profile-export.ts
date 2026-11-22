@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { type Document, isMap, isNode, isSeq, parse, parseDocument, stringify } from 'yaml';
+import { type Document, isMap, isNode, isSeq, parse, parseDocument, stringify, YAMLSeq } from 'yaml';
 
+import { rulesetFromGitHubExport } from '../plan/sections/rulesets.js';
 import { declaredReferences, ProfileError } from './profile.js';
 import { definitionKind, definitionSections, type DefinitionKind, environmentKey } from './schema.js';
 
@@ -110,6 +111,20 @@ export function readProfileImport(text: string): ProfileImport {
   if (value !== null && value !== undefined && !isRecord(value)) {
     throw new ProfileError('The file is not a profile or a reusable definition');
   }
+  // No profile or definition has these at its top level; a ruleset GitHub exported has them all.
+  if (isRecord(value) && typeof value['name'] === 'string' && 'enforcement' in value && 'target' in value) {
+    let ruleset: unknown;
+    try {
+      ruleset = rulesetFromGitHubExport(value);
+    } catch (error) {
+      throw new ProfileError('The file is not a ruleset as GitHub exports it', { cause: error });
+    }
+    return {
+      kind: 'ruleset',
+      text: stringify({ kind: 'ruleset', rulesets: [ruleset] }, { lineWidth: 0 }),
+      bundled: [],
+    };
+  }
   const kindRead = definitionKind.safeParse(value?.['kind']);
   const kind = value?.['kind'] === undefined ? undefined : kindRead.data;
   if (value?.['kind'] !== undefined && kind === undefined) {
@@ -199,8 +214,8 @@ export function withBundledInside(imported: ProfileImport): string {
       }
     }
     items.push(...inlineItems.filter((_, index) => !used.has(index)));
-    const list = document.createNode([]);
-    list.items = items as typeof list.items;
+    const list = new YAMLSeq();
+    list.items = items;
     document.set(section, list);
     const unset = definitions.flatMap((item) => {
       const value: unknown = parse(item.text);

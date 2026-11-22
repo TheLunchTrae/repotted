@@ -1,10 +1,8 @@
 import {
   type BundledDefinition,
-  declaredExtends,
   declaredReferences,
   type ProfileImport,
   withBundledInside,
-  withExtends,
   withRewrittenReferences,
 } from '@repotted/core';
 import { parse } from 'yaml';
@@ -51,14 +49,13 @@ function under(folder: string, target: string): boolean {
 }
 
 /**
- * Rewrites the file's `extends` and `references`, written from `from`, so
- * they name the same files written from `to`, after `move` maps each.
+ * Rewrites the file's `references`, written from `from`, so they name the
+ * same files written from `to`, after `move` maps each.
  */
 function reRooted(text: string, from: string, to: string, move: (target: string) => string): string {
-  const rewrite = (named: string): string => relative(to, move(resolve(from, named)));
-  const references = declaredReferences(text).length === 0 ? text : withRewrittenReferences(text, rewrite);
-  const base = declaredExtends(references);
-  return base === undefined ? references : withExtends(references, rewrite(base));
+  return declaredReferences(text).length === 0
+    ? text
+    : withRewrittenReferences(text, (named) => relative(to, move(resolve(from, named))));
 }
 
 async function namesIn(folder: string): Promise<string[]> {
@@ -87,9 +84,31 @@ async function placed(folder: string, bundled: BundledDefinition, name: string):
 /**
  * Lays the import out under `staging`, which it empties first. `names`
  * renames definitions by their reference, for those whose name is taken.
- * References and `extends` the import carries no file for keep naming the
- * files they name from `destination`.
+ * References the import carries no file for keep naming the files they
+ * name from `destination`.
  */
+/** Where each carried definition would be saved, by its reference's name or the one `names` gives it. */
+export async function placeBundledDefinitions(
+  folder: string,
+  imported: ProfileImport,
+  names: Readonly<Record<string, string>> = {},
+): Promise<ImportedDefinition[]> {
+  const definitions: ImportedDefinition[] = [];
+  for (const bundled of imported.bundled) {
+    const name = names[bundled.reference] ?? bundled.name;
+    const problem = profileNameProblem(name, 'reusable definition');
+    if (problem !== undefined) {
+      throw new Error(problem);
+    }
+    const definition = await placed(folder, bundled, name);
+    if (definitions.some((other) => other.file.toLowerCase() === definition.file.toLowerCase())) {
+      throw new Error(`Two definitions would be saved as ${relative(folder, definition.file)}.`);
+    }
+    definitions.push(definition);
+  }
+  return definitions;
+}
+
 export async function stageProfileImport(options: {
   readonly folder: string;
   readonly staging: string;
@@ -102,21 +121,7 @@ export async function stageProfileImport(options: {
   if (!under(folder, destination)) {
     throw new Error('Import into the profiles folder.');
   }
-  const definitions: ImportedDefinition[] = [];
-  if (choice === 'reusable') {
-    for (const bundled of imported.bundled) {
-      const name = options.names?.[bundled.reference] ?? bundled.name;
-      const problem = profileNameProblem(name, 'reusable definition');
-      if (problem !== undefined) {
-        throw new Error(problem);
-      }
-      const definition = await placed(folder, bundled, name);
-      if (definitions.some((other) => other.file.toLowerCase() === definition.file.toLowerCase())) {
-        throw new Error(`Two definitions would be saved as ${relative(folder, definition.file)}.`);
-      }
-      definitions.push(definition);
-    }
-  }
+  const definitions = choice === 'reusable' ? await placeBundledDefinitions(folder, imported, options.names) : [];
   const text = choice === 'inside' ? withBundledInside(imported) : imported.text;
   const stagedFile = join(staging, relative(folder, destination));
   const carried = new Map(
@@ -143,12 +148,13 @@ export async function stageProfileImport(options: {
 
 /**
  * Writes the staged import, as its editor last saved it, into the profiles
- * folder: new definitions first, then the file, with references to staged
+ * folder at `destination`, which may be another name or folder than it was
+ * staged for: new definitions first, then the file, with references to staged
  * files pointed at where they now are. Nothing it writes is replaced, and a
  * failed write takes back what it wrote. The staging folder goes once all
  * of it is written.
  */
-export async function saveStagedImport(staged: StagedImport): Promise<void> {
+export async function saveStagedImport(staged: StagedImport, destination = staged.destination): Promise<void> {
   const taken = staged.definitions.filter((item) => item.state === 'taken');
   if (taken.length > 0) {
     throw new Error(
@@ -157,17 +163,12 @@ export async function saveStagedImport(staged: StagedImport): Promise<void> {
   }
   const fromStaging = (target: string): string =>
     under(staged.staging, target) ? join(staged.folder, relative(staged.staging, target)) : target;
-  const text = reRooted(
-    await readFile(staged.file, 'utf8'),
-    dirname(staged.file),
-    dirname(staged.destination),
-    fromStaging,
-  );
+  const text = reRooted(await readFile(staged.file, 'utf8'), dirname(staged.file), dirname(destination), fromStaging);
   const writes = staged.definitions
     .filter((item) => item.state === 'new')
     .map((item) => ({ from: join(staged.staging, relative(staged.folder, item.file)), to: item.file }));
   const created: string[] = [];
-  let writing = staged.destination;
+  let writing = destination;
   try {
     for (const write of writes) {
       writing = write.to;
@@ -175,9 +176,9 @@ export async function saveStagedImport(staged: StagedImport): Promise<void> {
       await writeFile(write.to, await readFile(write.from, 'utf8'), { flag: 'wx' });
       created.push(write.to);
     }
-    writing = staged.destination;
-    await mkdir(dirname(staged.destination), { recursive: true });
-    await writeFile(staged.destination, text, { flag: 'wx' });
+    writing = destination;
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, text, { flag: 'wx' });
   } catch (error) {
     for (const file of created.toReversed()) {
       await rm(file, { force: true });

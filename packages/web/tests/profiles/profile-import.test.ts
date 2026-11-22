@@ -12,7 +12,6 @@ afterEach(async () => {
 const folder = '/profiles';
 const staging = '/imports';
 const exported = [
-  'extends: ./base.yaml',
   'references:',
   '  rulesets:',
   '    - ../definitions/ruleset/main.yaml',
@@ -33,7 +32,6 @@ async function write(file: string, text: string): Promise<void> {
 }
 
 async function stage(choice: 'reusable' | 'inside', names?: Record<string, string>) {
-  await write('/profiles/apps/base.yaml', 'repository: { delete_branch_on_merge: true }\n');
   return stageProfileImport({
     folder,
     staging,
@@ -45,7 +43,7 @@ async function stage(choice: 'reusable' | 'inside', names?: Record<string, strin
 }
 
 const expected = {
-  repository: { delete_branch_on_merge: true, has_wiki: false },
+  repository: { has_wiki: false },
   rulesets: [{ name: 'Main', enforcement: 'active' }],
 };
 
@@ -56,9 +54,8 @@ test('reusable definitions resolve while staged and are saved to their library w
   await expect(files.readFile('/profiles/definitions/ruleset/main.yaml', 'utf8')).rejects.toThrow('ENOENT');
 
   await saveStagedImport(staged);
-  const saved = parse(await files.readFile('/profiles/apps/service.yaml', 'utf8')) as Record<string, unknown>;
+  const saved: unknown = parse(await files.readFile('/profiles/apps/service.yaml', 'utf8'));
   expect(saved).toEqual({
-    extends: 'base.yaml',
     references: { rulesets: ['../definitions/ruleset/main.yaml'] },
     repository: { has_wiki: false },
   });
@@ -67,7 +64,10 @@ test('reusable definitions resolve while staged and are saved to their library w
 });
 
 test('a definition already there with the same settings is used rather than copied', async () => {
-  await write('/profiles/definitions/ruleset/Main.yaml', 'kind: ruleset\nrulesets: [{ name: Main, enforcement: active }]\n');
+  await write(
+    '/profiles/definitions/ruleset/Main.yaml',
+    'kind: ruleset\nrulesets: [{ name: Main, enforcement: active }]\n',
+  );
   const staged = await stage('reusable');
   expect(staged.definitions.map((item) => [item.state, item.file])).toEqual([
     ['same', '/profiles/definitions/ruleset/Main.yaml'],
@@ -79,7 +79,10 @@ test('a definition already there with the same settings is used rather than copi
 });
 
 test('a taken name refuses to save until the definition is renamed', async () => {
-  await write('/profiles/definitions/ruleset/main.yaml', 'kind: ruleset\nrulesets: [{ name: Main, enforcement: disabled }]\n');
+  await write(
+    '/profiles/definitions/ruleset/main.yaml',
+    'kind: ruleset\nrulesets: [{ name: Main, enforcement: disabled }]\n',
+  );
   const staged = await stage('reusable');
   expect(staged.definitions[0]?.state).toBe('taken');
   await expect(saveStagedImport(staged)).rejects.toThrow('Rename main');
@@ -97,8 +100,8 @@ test('definitions kept inside are written into the profile alone', async () => {
   const staged = await stage('inside');
   expect(staged.definitions).toEqual([]);
   await saveStagedImport(staged);
-  const saved = parse(await files.readFile('/profiles/apps/service.yaml', 'utf8')) as Record<string, unknown>;
-  expect(saved['references']).toBeUndefined();
+  const saved: unknown = parse(await files.readFile('/profiles/apps/service.yaml', 'utf8'));
+  expect(saved).not.toHaveProperty('references');
   expect((await resolveProfile('/profiles/apps/service.yaml')).profile).toMatchObject(expected);
   await expect(files.readdir('/profiles/definitions', { withFileTypes: true })).rejects.toThrow('ENOENT');
 });

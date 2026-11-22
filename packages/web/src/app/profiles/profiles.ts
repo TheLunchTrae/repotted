@@ -13,7 +13,9 @@ import {
   listProfiles,
   type OwnerType,
   parseRepo,
+  type ProfileImport,
   readInstallationSettingsUrl,
+  readProfileImport,
   stringifyProfile,
   syncFolder,
 } from '@repotted/core';
@@ -38,6 +40,14 @@ import {
   syncLocalFolder,
   unsyncedFiles,
 } from './local-folder.js';
+import {
+  type BundledChoice,
+  type ImportedDefinition,
+  placeBundledDefinitions,
+  saveStagedImport,
+  stageProfileImport,
+  type StagedImport,
+} from './profile-import.js';
 import { profileNameProblem } from './profile-name.js';
 import { saveReusableDefinitions } from './save-reusable-definitions.js';
 import { type UncapturedSettings, uncapturedSettings } from './uncaptured-settings.js';
@@ -146,6 +156,22 @@ async function profileFiles(folder: string, prefix = ''): Promise<string[]> {
 }
 
 /** Syncs and changes to the folder take turns, so a sync never reads a folder that is being changed. */
+/** Outside every profiles folder, so nothing staged is listed or synced. */
+const importStaging = '/imports';
+
+/**
+ * A file being imported: read, then, for a profile that carries reusable
+ * definitions, waiting for `chooseImport`, then staged with an editor open
+ * on it until `saveImport` adds it or `cancelImport` drops it.
+ */
+export interface ImportInProgress {
+  /** The file's name without its extension, which the import is saved as unless renamed. */
+  readonly name: string;
+  readonly imported: ProfileImport;
+  readonly staged?: StagedImport;
+  readonly editor?: ProfileEditor;
+}
+
 export class Profiles {
   readonly source = signal<ProfilesSource>({ kind: 'browser' });
   readonly sync = signal<SyncState>({ status: 'none' });
@@ -169,6 +195,7 @@ export class Profiles {
     { readonly file: string; readonly uncaptured: UncapturedSettings } | undefined
   >(undefined);
   readonly opened = signal<{ readonly file: string; readonly text: string } | undefined>(undefined);
+  readonly importing = signal<ImportInProgress | undefined>(undefined);
 
   readonly #github: GitHub;
   readonly #preferences: Preferences;
@@ -1038,6 +1065,121 @@ export class Profiles {
     this.#selectedForBatch.value = new Set([...this.#selectedForBatch.value].filter((file) => !files.has(file)));
   }
 
+  #githubChecks(): ConstructorParameters<typeof ProfileEditor>[1] {
+    return {
+      patterns: new ActionPatternChecks((patterns) => this.#asking(checkActionPatterns(this.#github, patterns))),
+      search: new ActionSearch((words) => this.#asking(findActions(this.#github, words))),
+      appLookup: new GitHubAppLookup((slug) => this.#asking(findGitHubApp(this.#github, slug))),
+    };
+  }
+
+  /**
+   * Reads a file into a library: `library` is the kind of definition it
+   * takes, or undefined for profiles. A profile that carries reusable
+   * definitions waits for `chooseImport`; anything else opens at once.
+   */
+  async startImport(fileName: string, text: string, library?: DefinitionKind): Promise<string | undefined> {
+    let imported: ProfileImport;
+    try {
+      imported = readProfileImport(text);
+    } catch (error) {
+      return messageOf(error);
+    }
+    if (imported.kind !== library) {
+      const wanted = definitionTypes.find((item) => item.kind === library);
+      return wanted === undefined
+        ? 'This is a reusable definition. Import it from its own page.'
+        : `Import a ${wanted.label.toLowerCase()} here.`;
+    }
+    this.importing.value = { name: basename(fileName).replace(/\.(ya?ml|json)$/iu, ''), imported };
+    return imported.bundled.length > 0 ? undefined : this.chooseImport('inside');
+  }
+
+  /** Where the carried definitions would go if saved as reusable, as the choice shows them. */
+  async importedDefinitions(names?: Readonly<Record<string, string>>): Promise<readonly ImportedDefinition[]> {
+    const imported = this.importing.value?.imported;
+    return imported === undefined ? [] : placeBundledDefinitions(this.folder.value, imported, names);
+  }
+
+  /** Stages the import and opens its editor; `names` renames carried definitions by their reference. */
+  async chooseImport(choice: BundledChoice, names?: Readonly<Record<string, string>>): Promise<string | undefined> {
+    const importing = this.importing.value;
+    if (importing === undefined) {
+      return 'Choose a file to import.';
+    }
+    const library = definitionTypes.find((item) => item.kind === importing.imported.kind);
+    const folder = this.folder.value;
+    let staged: StagedImport;
+    try {
+      staged = await stageProfileImport({
+        folder,
+        staging: importStaging,
+        destination: join(
+          folder,
+          ...(library === undefined ? [] : ['definitions', library.kind]),
+          `${importing.name}.yaml`,
+        ),
+        imported: importing.imported,
+        choice,
+        ...(names === undefined ? {} : { names }),
+      });
+    } catch (error) {
+      return messageOf(error);
+    }
+    // The editor saves to the staged file only; adding it to the profiles folder waits for saveImport.
+    const editor = new ProfileEditor(staged.file, this.#githubChecks(), profileStore);
+    await editor.load();
+    if (this.importing.value !== importing) {
+      return undefined;
+    }
+    this.importing.value = { ...importing, staged, editor };
+    return undefined;
+  }
+
+  /**
+   * Saves the editor's changes, so they apply or as a draft, then adds the
+   * import under `name` in `folder`, with the definitions it saves as
+   * reusable. Saving so it applies needs a profile with no problems.
+   */
+  async saveImport(name: string, folder: string, mode: SaveMode = 'applies'): Promise<string | undefined> {
+    const importing = this.importing.value;
+    if (importing?.staged === undefined || importing.editor === undefined) {
+      return 'Choose a file to import.';
+    }
+    const { staged, editor } = importing;
+    if (editor.dirty.value) {
+      await editor.save((work) => work(), mode);
+      if (editor.dirty.peek()) {
+        return editor.saveError.value ?? "The changes can't be saved as they stand.";
+      }
+    }
+    if (editor.loadError.value !== undefined) {
+      return editor.loadError.value;
+    }
+    if (mode === 'applies' && editor.configurationProblems.value.length > 0) {
+      return 'Fix the problems shown, or save it as a draft.';
+    }
+    let failed: string | undefined;
+    await this.#write(async () => {
+      // After the sync, which may have brought in a profile of that name.
+      failed = this.nameProblem(name, folder) ?? folderProblem(folder);
+      if (failed === undefined) {
+        await saveStagedImport(staged, this.#fileOf(name.trim(), folder)).catch((error: unknown) => {
+          failed = messageOf(error);
+        });
+      }
+    });
+    if (failed === undefined && this.importing.value === importing) {
+      this.importing.value = undefined;
+    }
+    return failed;
+  }
+
+  async cancelImport(): Promise<void> {
+    this.importing.value = undefined;
+    await rm(importStaging, { recursive: true, force: true });
+  }
+
   async select(listing: ProfileListing | undefined): Promise<void> {
     this.#selectedFile.value = listing?.file;
     this.opened.value = undefined;
@@ -1046,19 +1188,11 @@ export class Profiles {
     }
     let editor = this.#editors.value.find((item) => item.file === listing.file);
     if (editor === undefined) {
-      editor = new ProfileEditor(
-        listing.file,
-        {
-          patterns: new ActionPatternChecks((patterns) => this.#asking(checkActionPatterns(this.#github, patterns))),
-          search: new ActionSearch((words) => this.#asking(findActions(this.#github, words))),
-          appLookup: new GitHubAppLookup((slug) => this.#asking(findGitHubApp(this.#github, slug))),
-        },
-        {
-          ...profileStore,
-          saveReusable: (file, edits, definitions) =>
-            saveReusableDefinitions(this.folder.value, file, edits, definitions),
-        },
-      );
+      editor = new ProfileEditor(listing.file, this.#githubChecks(), {
+        ...profileStore,
+        saveReusable: (file, edits, definitions) =>
+          saveReusableDefinitions(this.folder.value, file, edits, definitions),
+      });
       this.#editors.value = [...this.#editors.value, editor];
       await editor.load();
     }
@@ -1159,6 +1293,7 @@ export class Profiles {
     this.settingsCaptureCouldNotRead.value = undefined;
     this.#selectedFile.value = undefined;
     this.opened.value = undefined;
+    this.importing.value = undefined;
   }
 
   async #work<Result>(work: () => Promise<Result>): Promise<Result> {

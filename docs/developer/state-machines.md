@@ -1157,6 +1157,25 @@ General Actions settings follow the settings editor independently.
 Missing or invalid references remain engine errors. Definition changes never
 write repository settings; reviewed apply owns those writes.
 
+### Imports
+
+An import is held in `Profiles.importing` and staged under `/imports`,
+outside every profiles folder, so nothing is listed or synced until it is
+saved. The staged files keep the profiles folder's layout, so the editor
+resolves references as it will once they are saved.
+
+| State                       | Event                                              | Next                                                                                                                                                         |
+| --------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| No import                   | A file is read into a library                      | A file that isn't YAML or JSON, isn't that library's kind, or carries definitions it doesn't reference is refused, and nothing is held.                      |
+| No import                   | A profile that carries definitions is read         | Waiting for the choice. `importedDefinitions` says which are new, which match a definition already there, and which take a name another definition has.      |
+| No import or choice waiting | Any other file is read, or the choice is made      | Staged, with its editor open on the staged file. Carried definitions kept inside are written into the profile; those saved as reusable are staged beside it. |
+| Staged                      | Edit                                               | Ordinary unsaved changes in the import's editor, which no source change or sign-out guard counts.                                                            |
+| Staged                      | Save, or save as a draft                           | The editor saves to the staged file, then, in the profiles' queue after a sync, the import is written under the name and folder given, never over a file.    |
+| Saving                      | A definition's name is taken by another definition | Nothing is written; the import stays staged for another name.                                                                                                |
+| Saving                      | The name is taken, or a write fails                | The definitions written in this attempt are removed, and the import stays staged.                                                                            |
+| Saving                      | Written                                            | No import. The staging folder is removed, and the profile or definition is listed.                                                                           |
+| Staged or choice waiting    | Cancel, or the profiles source changes             | No import.                                                                                                                                                   |
+
 ## Web deleting a profile
 
 The open profile's **Delete profile**, or **Delete** for the selected

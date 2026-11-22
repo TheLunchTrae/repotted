@@ -102,9 +102,9 @@ describe('an exported profile', () => {
 
 describe('an imported file', () => {
   test('refuses a carried definition the profile does not reference', () => {
-    expect(() =>
-      readProfileImport('bundled:\n  ./main.yaml: { kind: ruleset, rulesets: [{ name: Main }] }\n'),
-    ).toThrow("which the profile doesn't reference");
+    expect(() => readProfileImport('bundled:\n  ./main.yaml: { kind: ruleset, rulesets: [{ name: Main }] }\n')).toThrow(
+      "which the profile doesn't reference",
+    );
   });
 
   test('refuses a carried definition of another kind than its reference', () => {
@@ -122,4 +122,31 @@ describe('an imported file', () => {
   test('reads a definition by its kind', () => {
     expect(readProfileImport('kind: environment\nenvironments: [{ name: prod }]\n').kind).toBe('environment');
   });
+});
+
+test('a ruleset GitHub exported reads as a ruleset definition without GitHub’s own fields', async () => {
+  const exported = JSON.stringify({
+    id: 42,
+    name: 'Protect main',
+    target: 'branch',
+    source_type: 'Repository',
+    source: 'lunch/app',
+    enforcement: 'active',
+    conditions: { ref_name: { exclude: [], include: ['~DEFAULT_BRANCH'] } },
+    rules: [{ type: 'deletion' }, { type: 'non_fast_forward' }],
+    bypass_actors: [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'always' }],
+  });
+  const imported = readProfileImport(exported);
+  expect(imported.kind).toBe('ruleset');
+  const resolved = await parseProfile(imported.text, folder);
+  expect(resolved.profile.rulesets).toEqual([
+    {
+      name: 'Protect main',
+      target: 'branch',
+      enforcement: 'active',
+      conditions: { ref_name: { exclude: [], include: ['~DEFAULT_BRANCH'] } },
+      rules: [{ type: 'deletion' }, { type: 'non_fast_forward' }],
+      bypass_actors: [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'always' }],
+    },
+  ]);
 });
