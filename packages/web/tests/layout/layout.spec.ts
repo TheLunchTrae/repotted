@@ -1544,6 +1544,41 @@ test('importing a profile with reusable items asks how to keep them', async ({ p
   await expect(page.getByRole('link', { name: /^Main imported Used by 1 profile/u })).toBeVisible();
 });
 
+test('a carried name a sync takes while the choice is open asks for another name', async ({ page }) => {
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'Use a GitHub repository…', exact: true }).click();
+  await page.getByRole('combobox', { name: /^Repository Any repository/u }).fill('trae/repotted-config');
+  await page.getByRole('button', { name: 'Use this repository', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Change repository…', exact: true })).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event('hold-config')));
+  await page.getByRole('button', { name: 'Sync now', exact: true }).click();
+  if (!(await page.getByRole('link', { name: 'Profiles', exact: true }).isVisible())) {
+    await page.locator('.account-menu > summary').click();
+  }
+  await page.getByRole('link', { name: 'Profiles', exact: true }).click();
+  await importFile(
+    page,
+    'service.yaml',
+    'references: { rulesets: [../definitions/ruleset/Release.yaml] }\nbundled:\n  ../definitions/ruleset/Release.yaml: { kind: ruleset, rulesets: [{ name: Release, enforcement: active }] }\n',
+  );
+  const dialog = page.getByRole('dialog', { name: 'Save its reusable items separately?' });
+  await expect(dialog.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled();
+  await expect(dialog.getByRole('textbox')).toHaveCount(0);
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent('push-config-file', {
+        detail: {
+          path: 'definitions/ruleset/Release.yaml',
+          text: 'kind: ruleset\nrulesets: [{ name: Release, enforcement: evaluate }]\n',
+        },
+      }),
+    );
+    window.dispatchEvent(new Event('release-config'));
+  });
+  await expect(dialog.getByText('A different one has this name.', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled();
+});
+
 test('a carried name taken after the dialog opens asks for another name on Continue', async ({ page }) => {
   await page.goto('/profiles');
   await importFile(

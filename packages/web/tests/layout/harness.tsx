@@ -138,6 +138,12 @@ const config: GitHub = {
   },
 };
 const fleet = new FakeFleet([app, ...others]);
+// Adds a file to the config repository on GitHub, as a push from elsewhere would.
+window.addEventListener('push-config-file', (event) => {
+  // eslint-disable-next-line typescript/no-unsafe-type-assertion -- only the layout test dispatches this event, always with this detail
+  const { path, text } = (event as CustomEvent<{ path: string; text: string }>).detail;
+  configFiles.write({ [path]: text });
+});
 
 const signedOut = new URLSearchParams(location.search).has('signed-out');
 const configReads = { fail: new URLSearchParams(location.search).has('fail-first-sync'), pending: Promise.resolve() };
