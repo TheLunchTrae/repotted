@@ -215,3 +215,35 @@ test('a different definition of the same name that a sync brings in before the c
   expect(profiles.importing.value?.staged).toBeUndefined();
   expect((await profiles.importedDefinitions()).map((item) => item.state)).toEqual(['taken']);
 });
+
+test('a cancel while the choice waits behind a sync leaves no import and stages nothing', async () => {
+  const github = new FakeGitRepository();
+  github.write({ 'profiles/base.yaml': 'repository: { has_wiki: false }\n' });
+  const held = Promise.withResolvers<undefined>();
+  let holding = false;
+  const request = vi.fn<FakeGitRepository['request']>(async (method, path, body) => {
+    if (holding) {
+      await held.promise;
+    }
+    return github.request(method, path, body);
+  });
+  const profiles = new Profiles({ request }, { read: () => undefined, write: () => undefined }, () => undefined);
+  expect(await profiles.connect('lunch/config', 'profiles', false)).toBeUndefined();
+  await profiles.startImport('service.yaml', exported);
+
+  holding = true;
+  const calls = request.mock.calls.length;
+  const refreshing = profiles.refresh();
+  await vi.waitFor(() => {
+    expect(request.mock.calls.length).toBeGreaterThan(calls);
+  });
+  const choosing = profiles.chooseImport('reusable');
+  const cancelling = profiles.cancelImport();
+  held.resolve(undefined);
+  await refreshing;
+
+  expect(await choosing).toBe('The import was cancelled.');
+  await cancelling;
+  expect(profiles.importing.value).toBeUndefined();
+  await expect(files.readdir('/imports', { withFileTypes: true })).rejects.toThrow('ENOENT');
+});
