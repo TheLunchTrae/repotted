@@ -3,7 +3,7 @@
 A reusable environment keeps one deployment environment's protection settings
 in its own YAML file. Several profiles can reference it, or you can compare
 and apply it directly. It lives beside profiles in browser storage, a config
-repository, or a supported local folder, and uses the same sync and import/export
+repository, or a supported local folder, and uses the same sync and [import and export](web-app.md#import-and-export)
 flows.
 
 For example, save this as `production.yaml`:

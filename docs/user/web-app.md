@@ -566,8 +566,8 @@ from a listed profile are changed in that profile. Inline entries replace shared
 
 Reference changes preview the resolved entries before saving. Save those
 changes before editing the entries. Create a profile first, then choose
-shared definitions in its related tabs. Duplicating or importing a profile
-keeps its existing references.
+shared definitions in its related tabs. Duplicating a profile keeps its
+existing references.
 
 When creating an Actions policy, ruleset, or environment, select
 **Also save as a reusable Actions policy**, **Also save as a reusable ruleset**,
@@ -587,7 +587,8 @@ refreshes cached editors while preserving unsaved changes. It does not
 apply changes to GitHub repositories. Known consumers must remove their
 references and assignments before a definition can be deleted. See
 [Manage reusable definitions](profiles.md#manage-reusable-definitions-in-the-web-app)
-for creation, capture, duplication, import, export, and storage.
+for creation, capture, duplication, and storage, and
+[Import and export](#import-and-export) for moving them between places.
 Select definitions in a library to move them to another folder. Their
 references are updated, and selections on other pages stay separate.
 
@@ -890,6 +891,39 @@ Topics, custom properties, and autolinks are not edited here yet.
 
 A problem already saved in a draft offers **Go to it**. **Reset** only
 resets unsaved edits; edit that draft entry or use **Discard draft**.
+
+### Import and export
+
+**Export** on a profile's page, or on a definition's, downloads its saved
+file. A profile's file includes each Actions policy, ruleset, and
+environment it uses from a library, so it imports where those
+definitions aren't.
+
+**Import** beside **New profile**, and beside **New Actions policy**,
+**New ruleset**, and **New environment** in each library, takes a YAML
+file that **Export** made, or one you wrote. **Import** in **Rulesets**
+also takes a ruleset that GitHub's **Export ruleset** downloaded, as
+JSON. Each page takes only its own kind of file.
+
+When a profile includes reusable definitions, Repotted lists them and
+asks how to keep them:
+
+- **Save as reusable**: each goes to its library, and the profile uses it
+  from there. A definition of the same name with the same settings is
+  used instead of a copy. One with other settings needs another name,
+  which you enter there.
+- **Keep in the profile**: their settings are written into the profile,
+  and nothing is added to the libraries. A definition for one owner type
+  makes the profile for that type, as using it did.
+
+The file then opens on its own page, marked **Not saved yet**, with the
+usual settings and their problems. Choose its **Name** and **Folder** and
+change anything you want. **Save** adds it, with any drafts it has
+applying, as **Save** does on any profile. **Save as draft** adds it with
+your changes kept as a draft and its own drafts left as drafts. Either
+returns to the list it was imported from. Nothing is added until then,
+and leaving the page asks before it discards the import. Repotted never
+replaces a file that is already there.
 
 ### Delete a profile
 

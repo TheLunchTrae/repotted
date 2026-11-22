@@ -208,3 +208,9 @@ export function planRulesets(desired: readonly RulesetEntry[], live: LiveRuleset
 
   return { changes: [...creates, ...updates, ...deletes], warnings: [] };
 }
+
+/** A ruleset as GitHub's Export ruleset writes it, which carries GitHub's own fields, such as its id and source. */
+export function rulesetFromGitHubExport(data: unknown): StoredRuleset {
+  const exported = typeof data === 'object' && data !== null ? data : {};
+  return normalize({ id: 0, ...exported }).ruleset;
+}

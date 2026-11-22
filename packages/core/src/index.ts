@@ -91,3 +91,5 @@ export {
   type AuthoritativeSection,
   type Ownership,
 } from './plan/ownership.js';
+export { exportProfile, readProfileImport, withBundledInside } from './profiles/profile-export.js';
+export type { BundledDefinition, ProfileImport } from './profiles/profile-export.js';

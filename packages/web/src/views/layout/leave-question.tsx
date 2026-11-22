@@ -53,6 +53,16 @@ function Wording({ question }: { readonly question: LeaveQuestion }): JSX.Elemen
           </p>
         </>
       );
+    case 'import':
+      return (
+        <>
+          <h2 id="leave-question-heading">Discard this import?</h2>
+          <p>
+            {question.name === '' ? 'The import' : <strong>{question.name}</strong>} isn't added yet. Leaving discards
+            it and any changes you made to it.
+          </p>
+        </>
+      );
   }
 }
 

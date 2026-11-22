@@ -315,6 +315,8 @@ export interface EditorSaving {
   readonly discardDraft: () => Promise<void>;
   readonly onGitHub: boolean;
   readonly saveLabel?: string;
+  /** For a file Repotted is adding, such as an import: saving adds it, so it needs no change first. */
+  readonly newFile?: boolean;
   readonly extraBarActions?: ComponentChildren;
   readonly primaryActionInsteadOfSave?: ComponentChildren;
 }
@@ -595,7 +597,7 @@ export function ProfileSettings({
       pending={savingChanges}
       class={saving.primaryActionInsteadOfSave === undefined ? 'button button-primary' : 'button'}
       type="button"
-      disabled={!editor.canSave.value}
+      disabled={!(saving.newFile === true ? editor.canSaveNewFile.value : editor.canSave.value)}
       onClick={() => {
         run(saveWithFeedback());
       }}
@@ -891,11 +893,13 @@ export function ProfileSettings({
           {editor.saving.value
             ? 'Saving…'
             : !editor.dirty.value
-              ? editor.unknownFields.value.length > 0
-                ? 'Unrecognized keys will be removed when you save.'
-                : editor.draftCount.value > 0
-                  ? 'Everything is saved, some of it as a draft. Save applies the draft.'
-                  : 'Everything is saved.'
+              ? saving.newFile === true
+                ? 'Not saved yet.'
+                : editor.unknownFields.value.length > 0
+                  ? 'Unrecognized keys will be removed when you save.'
+                  : editor.draftCount.value > 0
+                    ? 'Everything is saved, some of it as a draft. Save applies the draft.'
+                    : 'Everything is saved.'
               : blocking
                 ? `${editor.problemsBlockingSave.value.length === 1 ? 'One thing holds' : `${editor.problemsBlockingSave.value.length} things hold`} the save back.`
                 : (editor.draftProblem.value ?? 'You have changes that are not saved.')}
@@ -932,7 +936,9 @@ export function ProfileSettings({
                     pending={savingDraft}
                     class="button"
                     type="button"
-                    disabled={!editor.canSaveAsDraft.value}
+                    disabled={
+                      !(saving.newFile === true ? editor.canSaveNewFileAsDraft.value : editor.canSaveAsDraft.value)
+                    }
                     onClick={() => {
                       run(saveWithFeedback('draft'));
                     }}

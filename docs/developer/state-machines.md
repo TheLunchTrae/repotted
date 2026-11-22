@@ -176,10 +176,9 @@ other controls disabled by the same shared work queue.
 | Pending | Fulfill or reject | Release the lock and reset pending presentation if mounted; the owning operation reports its failure. |
 | Any     | Unmount           | Stop updating the control; let the owning operation finish normally.                                  |
 
-The new-profile form distinguishes file reading from creation, so reading an
-import keeps **Create** disabled without claiming that creation has started.
-The sign-out question also remembers whether it is saving or discarding so
-only the chosen action shows progress. Pending buttons expose a busy state
+**Import** shows progress while it reads the chosen file. The sign-out
+question also remembers whether it is saving or discarding so only the
+chosen action shows progress. Pending buttons expose a busy state
 without losing focus, and reduced motion keeps their indicator static.
 
 ## Web repositories
@@ -1124,21 +1123,21 @@ capture, which writes the repository's own.
 ### Reusable definitions and references
 
 The three definition libraries use the profiles' file store and write queue.
-Capture, duplicate, and import keep their existing validation and sync
+Capture and duplicate keep their existing validation and sync
 transitions. The profile tree filters definitions out; other source pickers
 still list them for standalone apply and assignments. Cached editors count
 in the existing unsaved and source-change guards.
 
 | State                       | Event                                                                                                            | Next                                                                                                                                                                                            |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Library                     | New definition                                                                                                   | The existing creation form is fixed to that library's kind, retaining capture, duplicate, import, target naming, and owner choices.                                                             |
+| Library                     | New definition                                                                                                   | The existing creation form is fixed to that library's kind, retaining capture, duplicate, target naming, and owner choices.                                                                     |
 | Creating                    | A requested create finishes after its form closes                                                                | The file may remain created, but the abort signal prevents selecting it or navigating over a subsequently opened page. Captures remain cancelled without a file.                                |
 | Profile saved               | Add, replace, or remove a reference                                                                              | Unsaved references are previewed with other edits. Save persists paths without copying configuration; drafting references is refused.                                                           |
 | References unsaved          | Resolution succeeds                                                                                              | Entry lists show the resolved preview and wait for Save before entry editing resumes. Existing inline entry edits remain part of the save.                                                      |
 | References unsaved          | Resolution fails                                                                                                 | Saved entry rows remain editable to repair invalid configuration; the page explains that the changed references cannot yet be previewed.                                                        |
 | Invalid profile             | Load for repair                                                                                                  | Valid own links, including valid array elements beside malformed values, remain available to the picker while configuration errors stay reported. Adding a reference preserves those links.     |
 | Reference edit              | Save waits behind sync and the profile text changes                                                              | Nothing is overwritten. The edit stays unsaved with the concurrent-change error.                                                                                                                |
-| New profile                 | Create, duplicate, or import                                                                                     | The editor selects definitions in each related tab. Duplicate and import retain existing references.                                                                                            |
+| New profile                 | Create or duplicate                                                                                              | The editor selects definitions in each related tab. Duplicate retains existing references.                                                                                                      |
 | New named entry             | Choose to also save a reusable definition                                                                        | The name stays in the cached editor with unsaved changes; invalid names block Save, and Save as draft is refused.                                                                               |
 | Reusable choice pending     | Remove or reset a new entry                                                                                      | Its choice is inactive; a batch undo restores the choice with the entry. Reset in the footer clears all choices.                                                                                |
 | Reusable choice pending     | Save                                                                                                             | Saving in the profiles' queue. Validate names against files after sync, write definitions exclusively, and save relative references without inline copies. The controls wait until saving ends. |
@@ -1156,6 +1155,32 @@ General Actions settings follow the settings editor independently.
 
 Missing or invalid references remain engine errors. Definition changes never
 write repository settings; reviewed apply owns those writes.
+
+### Imports
+
+An import is held in `Profiles.importing` and staged under `/imports`,
+outside every profiles folder, so nothing is listed or synced until it is
+saved. The staged files keep the profiles folder's layout, so the editor
+resolves references as it will once they are saved.
+
+| State                       | Event                                               | Next                                                                                                                                                                                                             |
+| --------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No import                   | A file is read into a library                       | A file that isn't YAML or JSON, isn't that library's kind, or carries definitions it doesn't reference is refused, and nothing is held.                                                                          |
+| No import                   | A profile that carries definitions is read          | Waiting for the choice. `importedDefinitions` says which are new, which match a definition already there, and which take a name another definition has.                                                          |
+| No import or choice waiting | Any other file is read, or the choice is made       | Staged, with its editor open on the staged file. Carried definitions kept inside are written into the profile; those saved as reusable are staged beside it.                                                     |
+| Staged                      | Edit                                                | Ordinary unsaved changes in the import's editor. Leaving its page asks first; source changes and sign-out don't count it.                                                                                        |
+| Choice waiting              | A rename                                            | The definitions are placed again, so the field shows whether its name is now free.                                                                                                                               |
+| Staging                     | Cancel, or Escape                                   | Refused until the import is staged.                                                                                                                                                                              |
+| Staged                      | Save                                                | The editor saves its changes and the file's drafts so they apply, as an editor's Save does, then, in the profiles' queue after a sync, the import is written under the name and folder given, never over a file. |
+| Staged                      | Save as draft                                       | The same, with the changes kept in the draft and the file's drafts left as they are.                                                                                                                             |
+| Staged                      | Save while a save runs                              | The same save.                                                                                                                                                                                                   |
+| Saving                      | Profiles are kept elsewhere now                     | Nothing is written, and the import stays staged.                                                                                                                                                                 |
+| Saving                      | A definition of the same name arrived since staging | One with the same settings is used. One with other settings refuses the save; the import stays staged, and Cancel and import again gives it another name.                                                        |
+| Saving                      | A definition used as it was at staging is gone      | The save is refused and the import stays staged; Cancel and import again saves it as reusable.                                                                                                                   |
+| Saving                      | The name is taken, or a write fails                 | The definitions written in this attempt are removed, and the import stays staged.                                                                                                                                |
+| Saving                      | Written                                             | No import. The staging folder is removed, and the profile or definition is listed.                                                                                                                               |
+| Staged, staging, or saving  | Cancel, or leaving the page                         | No import. Staging or saving under way finishes first, so a save either adds the import or takes back what it wrote, and a save still waiting its turn behind a sync adds nothing; then the staging folder goes. |
+| Staged or choice waiting    | A source change                                     | No import. The staging folder stays until the next import empties it.                                                                                                                                            |
 
 ## Web deleting a profile
 
@@ -1261,8 +1286,9 @@ within the app.
 
 A page holds work while leaving it would lose something: an apply or a
 batch whose editor has unsaved changes or one-off edits set in the apply, a
-capture still reading, or a new-profile form with a name, target, or import
-entered. The apply queue holds nothing, since it outlasts the page. A save
+capture still reading, a new-profile form with a name or target entered, or
+an import not yet saved. A saved import returns to the list it was imported
+from. The apply queue holds nothing, since it outlasts the page. A save
 of a profile or a shared definition that goes through returns to its list,
 unless the profile had a problem, was being repaired, or saved changed
 references or new reusable definitions; those keep it open for the editing that follows.

@@ -3407,3 +3407,19 @@ select.field {
     flex-basis: 100%;
   }
 }
+
+/* An import's name and folder sit side by side until the screen is too narrow for both. */
+.import-place {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+
+.import-place .form-field {
+  margin: 0;
+}
+
+.import-page > .notice {
+  margin-block-end: 16px;
+}

@@ -527,7 +527,7 @@ settings, including changes through shared definitions. A missing or invalid
 reference blocks resolution. Apply reads the sources again and refuses changed
 writes until you review a fresh plan.
 
-Definitions sync, import, export, duplicate, and move with profiles. Moves update
+Definitions sync, duplicate, and move with profiles. Moves update
 relative references, and deletion refuses definitions still referenced by a
 profile. Update consumers deliberately before deleting a shared definition.
 
@@ -537,9 +537,10 @@ profile. Update consumers deliberately before deleting a shared definition.
 in the main navigation. Open a library and choose **New Actions policy**,
 **New ruleset**, or **New environment**. Enter its file name and, for each
 definition, its GitHub name in **Target name**. The form also
-captures a definition from a repository, duplicates a saved definition, or
-imports YAML. **Export YAML** downloads an open definition. Definitions
-share profiles' browser, local-folder, and config-repository storage and sync.
+captures a definition from a repository or duplicates a saved definition.
+[Import and export](web-app.md#import-and-export) moves definitions and
+profiles between places. Definitions share profiles' browser, local-folder,
+and config-repository storage and sync.
 
 A profile's **Actions policies**, **Rulesets**, and **Environments** tabs let you
 select existing shared definitions separately from creating inline items.

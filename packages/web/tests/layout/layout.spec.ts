@@ -27,6 +27,13 @@ async function newRepositoryFolder(page: Page, name = 'Work'): Promise<void> {
   await page.getByRole('button', { name: 'Create folder', exact: true }).click();
 }
 
+async function importFile(page: Page, name: string, text: string): Promise<void> {
+  await page.getByRole('button', { name: 'Import', exact: true }).waitFor();
+  await page
+    .locator('input[type=file]')
+    .setInputFiles({ name, mimeType: 'application/yaml', buffer: Buffer.from(text) });
+}
+
 async function openFolderProfiles(page: Page): Promise<void> {
   await page.getByLabel('Edit Work', { exact: true }).click();
   await page.getByRole('button', { name: 'Profiles', exact: true }).click();
@@ -59,6 +66,22 @@ const screens: Readonly<Record<string, Screen>> = {
   'shared environment editor': {
     path: '/environments?definition=definitions%2Fenvironment%2Fproduction.yaml',
     visibleOnceDrawn: (page) => page.getByRole('textbox', { name: 'Name', exact: true }),
+  },
+  'reusable items an import carries': {
+    path: '/profiles',
+    reachFromPath: (page) =>
+      importFile(
+        page,
+        'a-profile-file-with-a-long-name-and-no-spaces.yaml',
+        'references: { rulesets: [../definitions/ruleset/Main.yaml] }\nbundled:\n  ../definitions/ruleset/Main.yaml: { kind: ruleset, rulesets: [{ name: Main, enforcement: disabled }] }\n',
+      ),
+    visibleOnceDrawn: (page) => page.getByRole('button', { name: 'Continue', exact: true }),
+  },
+  'an import before it is saved': {
+    path: '/rulesets',
+    reachFromPath: (page) =>
+      importFile(page, 'protect-main.yaml', 'kind: ruleset\nrulesets: [{ name: Protect main, enforcement: active }]\n'),
+    visibleOnceDrawn: (page) => page.getByText('Not saved yet.', { exact: true }),
   },
   'new shared definition': {
     path: '/rulesets?new',
@@ -393,15 +416,11 @@ test('a save confirmation clears the current height of the save bar', async ({ p
 });
 
 test('a save bar above long YAML cannot push a confirmation above the viewport', async ({ page }) => {
-  await page.goto('/profiles/new');
-  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('long-profile');
-  await page.getByLabel('Import YAML file').setInputFiles({
-    name: 'long-profile.yaml',
-    mimeType: 'application/yaml',
-    buffer: Buffer.from('repository: { has_wiki: true }\n' + '# A profile comment\n'.repeat(70)),
-  });
-  await page.getByRole('button', { name: 'Create', exact: true }).click();
-  await expect(page.getByText('long-profile created.', { exact: true })).toBeVisible();
+  await page.goto('/profiles');
+  await importFile(page, 'long-profile.yaml', 'repository: { has_wiki: true }\n' + '# A profile comment\n'.repeat(70));
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText('long-profile imported.', { exact: true })).toBeVisible();
+  await page.getByText('long-profile', { exact: true }).click();
   await page.getByRole('button', { name: 'Show YAML', exact: true }).click();
   await page
     .locator('pre.code')
@@ -1467,9 +1486,8 @@ test('saved draft problems offer navigation without an ineffective Reset', async
   await expect(page.getByRole('textbox', { name: 'Hex color', exact: true })).toBeFocused();
 });
 
-test('import waits for its selected file before creating a definition', async ({ page }) => {
-  await page.goto('/profiles/new');
-  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('imported-policy');
+test('import waits for its file, then opens it unsaved on its page until Save', async ({ page }) => {
+  await page.goto('/actions-policies');
   await page.evaluate(() => {
     const read = (file: File): Promise<string> => Blob.prototype.text.call(file);
     File.prototype.text = async function () {
@@ -1477,19 +1495,53 @@ test('import waits for its selected file before creating a definition', async ({
       return read(this);
     };
   });
-  await page.getByLabel('Import YAML file').setInputFiles({
-    name: 'policy.yaml',
-    mimeType: 'application/yaml',
-    buffer: Buffer.from('kind: actions-policy\nactions_policies: [{ name: Approved, enforcement: active }]\n'),
-  });
-  const create = page.getByRole('button', { name: 'Create', exact: true });
-  await expect(create).toBeDisabled();
+  await importFile(
+    page,
+    'policy.yaml',
+    'kind: actions-policy\nactions_policies: [{ name: Approved, enforcement: active }]\n',
+  );
+  await expect(page.getByRole('button', { name: 'Import', exact: true })).toHaveAttribute('aria-busy', 'true');
   await page.evaluate(() => window.dispatchEvent(new Event('release-import')));
-  await expect(create).toBeEnabled();
-  await create.click();
-  await expect(page.getByRole('heading', { name: 'imported-policy', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'policy', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Actions policies', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Repository', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Not saved yet.', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: '← All actions policies', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Discard this import?', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Stay', exact: true }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page).toHaveURL('/actions-policies');
+  await expect(page.getByRole('link', { name: /^policy Used by 0 profiles/u })).toBeVisible();
+});
+
+test('importing a profile with reusable items asks how to keep them', async ({ page }) => {
+  await page.goto('/profiles');
+  await importFile(
+    page,
+    'service.yaml',
+    [
+      'references: { rulesets: [../definitions/ruleset/Main.yaml, ../definitions/ruleset/tags.yaml] }',
+      'bundled:',
+      '  ../definitions/ruleset/Main.yaml: { kind: ruleset, rulesets: [{ name: Main, enforcement: disabled }] }',
+      '  ../definitions/ruleset/tags.yaml: { kind: ruleset, rulesets: [{ name: Tags, enforcement: active }] }',
+      '',
+    ].join('\n'),
+  );
+  const dialog = page.getByRole('dialog', { name: 'Save its reusable items separately?' });
+  const continuing = dialog.getByRole('button', { name: 'Continue', exact: true });
+  await expect(dialog.getByRole('textbox')).toHaveValue('Main');
+  await expect(continuing).toBeDisabled();
+  // Typed a letter at a time, since the field must stay once the name is free.
+  await dialog.getByRole('textbox').press('End');
+  await dialog.getByRole('textbox').pressSequentially(' imported');
+  await expect(dialog.getByRole('textbox')).toHaveValue('Main imported');
+  await expect(continuing).toBeEnabled();
+  await continuing.click();
+  await expect(page.getByText(/^With 2 new reusable items/u)).toBeVisible();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page).toHaveURL('/profiles');
+  await openPage(page, 'Rulesets');
+  await expect(page.getByRole('link', { name: /^Main imported Used by 1 profile/u })).toBeVisible();
 });
 
 test('a new reusable environment stays in the profile through a linked definition', async ({ page }) => {
@@ -1521,14 +1573,14 @@ for (const [type, label] of [
   ['restrict_actions_actors', 'Restrict actors'],
 ]) {
   test(`restoring the ${type} policy rule preserves its omitted allowlist`, async ({ page }) => {
-    await page.goto('/actions-policies?new');
-    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Partial policy');
-    await page.getByLabel('Import YAML file').setInputFiles({
-      name: 'partial-policy.yaml',
-      mimeType: 'application/yaml',
-      buffer: Buffer.from(`kind: actions-policy\nactions_policies: [{ name: Partial, rules: [{ type: ${type} }] }]\n`),
-    });
-    await page.getByRole('button', { name: 'Create definition', exact: true }).click();
+    await page.goto('/actions-policies');
+    await importFile(
+      page,
+      'partial-policy.yaml',
+      `kind: actions-policy\nactions_policies: [{ name: Partial, rules: [{ type: ${type} }] }]\n`,
+    );
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.getByRole('link', { name: /^partial-policy /u }).click();
     const save = page.getByRole('button', { name: 'Save definition', exact: true });
     const rule = page.getByRole('checkbox', { name: new RegExp(`^${label}`, 'u') });
     await expect(save).toBeDisabled();

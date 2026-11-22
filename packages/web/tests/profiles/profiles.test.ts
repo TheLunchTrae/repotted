@@ -1227,7 +1227,7 @@ test('reference saves preserve unrelated inline values', async () => {
   expect(saved).toContain('trusted.yaml');
 });
 
-test('definitions duplicate across folders without changing their source and import validates references', async () => {
+test('definitions duplicate across folders without changing their source', async () => {
   await inBrowser({
     'trusted.yaml': 'kind: actions-policy\nactions_policies: [{ name: Approved, enforcement: active }]\n',
   });
@@ -1246,15 +1246,6 @@ test('definitions duplicate across folders without changing their source and imp
     }),
   ).toBeUndefined();
   expect(await readFile('/profiles/browser/shared/copy.yaml', 'utf8')).toBe(await readFile(source.file, 'utf8'));
-  expect(
-    await profiles.create({
-      name: 'broken',
-      folder: '',
-      start: { kind: 'import', text: 'references:\n  actions_policies: [missing.yaml]\n' },
-      ownerType: undefined,
-    }),
-  ).toContain('missing.yaml');
-  expect(profiles.listings.value.map((item) => item.name)).not.toContain('broken');
 });
 
 test('refuses deleting or moving sources used by repository assignments without partial changes', async () => {

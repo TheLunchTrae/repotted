@@ -376,14 +376,34 @@ changed elsewhere. `views/profile-editor/entries.tsx` only draws them.
 
 `views/profiles/definitions.tsx` gives Actions policies, rulesets, and
 environments separate routes. It reuses `NewProfileForm` fixed to a kind
-and the existing profile editor, preserving capture, duplicate, import,
-export, owner handling, and drafts. `Profiles.definitions` derives library
+and the existing profile editor, preserving capture, duplicate, owner
+handling, and drafts. `Profiles.definitions` derives library
 lists from the same listings; the profile tree filters them out without
 removing definitions from apply and assignment pickers.
 
+An export is the saved file, and for a profile, each definition it
+references carried under a top-level `bundled` key, keyed by the reference
+as the profile writes it (`exportProfile` in
+`packages/core/src/profiles/profile-export.ts`). No saved profile has that
+key: `readProfileImport` takes it out and checks each carried definition
+against its reference, and `withBundledInside` writes them into the profile
+so it resolves as it did with the references. Import also reads a ruleset
+in GitHub's export format, without GitHub's own fields.
+
+`app/profiles/profile-import.ts` stages an import under `/imports`, outside
+every profiles folder, so nothing is listed or synced before Save. The
+staged files keep the profiles folder's layout, so references between them
+resolve as they will once saved, and references to files already there are
+rewritten from the staging folder and back. `Profiles.importing` holds the
+import and an ordinary `ProfileEditor` on the staged file, which saves only
+there; `Profiles.saveImport` then writes the import and its new definitions
+in the profiles' queue, never over a file, and removes what it wrote when a
+write fails. The editor's `canSaveNewFile` lets Save add the file without a
+change first. [Imports](state-machines.md#imports) has its states.
+
 `SharedDefinition` adds a reference picker to each related profile editor
-tab. Profile creation leaves these choices to the editor; duplication and
-import retain existing references. An existing editor previews and saves
+tab. Profile creation leaves these choices to the editor; duplication
+retains existing references. An existing editor previews and saves
 `references` with its settings, checks the original file text before
 replacing that mapping, and refuses drafting reference edits.
 `ProfileEditor` retains optional reusable choices for new Actions policy, ruleset, and environment rows, includes them in dirty and save guards, and clears them on

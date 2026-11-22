@@ -9,6 +9,7 @@ import type { Repositories } from '../../app/repositories/repositories.js';
 import { resolve } from '../../engine/path.js';
 import { Link } from '../layout/link.js';
 import { run } from '../layout/run.js';
+import { ImportButton, ImportPage } from './import.js';
 import { NewProfileForm } from './new-profile.js';
 import { Banners, DeleteProfiles, FolderNameDialog, Profile, type ProfilesDialog, SelectedPanel } from './profiles.js';
 
@@ -30,6 +31,7 @@ export function DefinitionsPage({
   const query = new URLSearchParams(router.search.value);
   const named = query.get('definition');
   const creating = query.has('new');
+  const importing = query.has('import');
   const definitions = profiles.definitions.value.filter((listing) => listing.kind === kind);
   const batch = profiles.batch.value.filter((listing) => listing.kind === kind);
   const [dialog, setDialog] = useState<ProfilesDialog | undefined>(undefined);
@@ -59,8 +61,15 @@ export function DefinitionsPage({
       ? []
       : profiles.consumerNames(listing).filter((name) => !users.some((user) => user.name === name));
   return (
-    <div class={`page${!creating && named === null && batch.length > 0 ? ' page-with-panel' : ''}`}>
-      {creating ? (
+    <div class={`page${!creating && !importing && named === null && batch.length > 0 ? ' page-with-panel' : ''}`}>
+      {importing ? (
+        <div class="profiles-open">
+          <div class="profiles-open-top">
+            <Banners profiles={profiles} />
+          </div>
+          <ImportPage key={kind} profiles={profiles} router={router} kind={kind} />
+        </div>
+      ) : creating ? (
         <div class="profiles-open">
           <div class="profiles-open-top">
             <Link router={router} to={library.path}>
@@ -168,9 +177,12 @@ export function DefinitionsPage({
                   : 'Create a definition once and use it across profiles.'}
               </p>
             </div>
-            <Link class="button button-primary" router={router} to={`${library.path}?new`}>
-              New {kind === 'actions-policy' ? library.label : library.label.toLowerCase()}
-            </Link>
+            <div class="page-actions">
+              <ImportButton profiles={profiles} router={router} kind={kind} />
+              <Link class="button button-primary" router={router} to={`${library.path}?new`}>
+                New {kind === 'actions-policy' ? library.label : library.label.toLowerCase()}
+              </Link>
+            </div>
           </div>
           <Banners profiles={profiles} />
           <ul class="rows">
@@ -212,7 +224,7 @@ export function DefinitionsPage({
             )}
         </section>
       )}
-      {!creating && named === null && batch.length > 0 && (
+      {!creating && !importing && named === null && batch.length > 0 && (
         <SelectedPanel
           profiles={profiles}
           selection={batch}
