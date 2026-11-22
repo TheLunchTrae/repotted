@@ -394,8 +394,8 @@ apply editors. `save-reusable-definitions.ts` validates destination names
 and effective configuration in the profiles' write turn, writes definitions
 exclusively, and replaces the corresponding new inline entries with relative references. A failed profile write removes every
 definition created by that attempt. Sync commits the complete change.
-Library links use effective source
-files for inherited values. Saving a definition refreshes the existing
+Library links use the effective source
+files of referenced values. Saving a definition refreshes the existing
 editor cache, preserving unrelated edits. Consumer tracking includes cached
 unsaved references; deletion refreshes dependencies before checking its
 kind, dirty state, profile consumers, and assignments.
@@ -408,8 +408,8 @@ keep their row identities; unnamed or duplicate entries use their original
 list positions. Unknown keys enable a cleanup-only save without marking the
 profile as an unsaved user edit. The save preview lists those keys. Saving
 prunes unknown fields from the original YAML document while retaining known
-invalid values, comments, and open records such as rule parameters. Base
-files stay untouched. Syntax-repair saves use the same cleanup.
+invalid values, comments, and open records such as rule parameters.
+Referenced files stay untouched. Syntax-repair saves use the same cleanup.
 Corrections edit the original document before validating
 the result. Planning still uses `resolveProfile`, which requires a valid
 configuration.
@@ -453,8 +453,8 @@ reads only the blobs of the profiles it adds or changes. The preview copies
 the working copy, in a turn of the profiles' queue so no sync changes it
 mid-read, into `/preview/<n>/before` and `/preview/<n>/after`, lays the
 branch's files over the second, and resolves every profile on both sides, so
-a profile that changes only through its base shows too. A profile whose
-chain leaves its side's folder doesn't load, so a branch can't point one at
+a profile that changes only through a definition it references shows too. A
+profile whose chain leaves its side's folder doesn't load, so a branch can't point one at
 the browser's other profiles. The before side is the working copy, not the
 default branch, so the preview lists the profiles whose blob ids differ from
 the sync record, which it would show as undone by the branch. Its rows reuse

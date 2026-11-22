@@ -44,8 +44,8 @@ repository:
   delete_branch_on_merge: true
 ```
 
-Each reference supplies one environment. References apply after the base
-profiles and before inline environments in the referencing profile. An inline
+Each reference supplies one environment. References apply after the profiles
+applied before this one and before inline environments in the referencing profile. An inline
 environment with the same name, in any case, replaces the whole referenced
 entry. Later profiles in an ordered combination and staged one-off edits use
 the same replacement rule. Two references in one profile must not supply the

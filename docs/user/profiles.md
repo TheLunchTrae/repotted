@@ -388,7 +388,7 @@ environment, label, autolink or Pages site that an earlier one adds, with
 [`examples/repotted.yaml`](../../examples/repotted.yaml) is what one
 repository adds to it; they apply in that order.
 
-A profile file that still names a profile in `extends` doesn't load, so it
+A profile file that names a profile in `extends` doesn't load, so it
 never applies without what it named. Copy the settings it needs from that
 profile into the file, or apply the two profiles together, then remove the
 `extends` line. In the web app, **Remove invalid configuration** takes it out.

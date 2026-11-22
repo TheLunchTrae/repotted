@@ -11,6 +11,7 @@ import { fileURLToPath, URL } from 'node:url';
 
 const command = execPath;
 const prefix = [fileURLToPath(new URL('../dist/repotted.js', import.meta.url))];
+const examples = fileURLToPath(new URL('../../../examples/', import.meta.url));
 
 const version = spawnSync(command, [...prefix, '--version'], { encoding: 'utf8' });
 if (version.status !== 0 || !/^\d+\.\d+\.\d+/u.test(version.stdout)) {
@@ -28,7 +29,7 @@ if (typeof reported !== 'object' || /cannot find|failed to load|native binding/i
   throw new Error(`repotted status --json could not load the keychain module: ${status.stdout}${status.stderr}`);
 }
 
-const server = spawn(command, [...prefix, 'mcp', '--read-only'], { stdio: ['pipe', 'pipe', 'inherit'] });
+const server = spawn(command, [...prefix, 'mcp', '--read-only'], { cwd: examples, stdio: ['pipe', 'pipe', 'inherit'] });
 const replies = new Map();
 let buffer = '';
 server.stdout.setEncoding('utf8');
@@ -77,11 +78,14 @@ try {
     name: 'plan',
     arguments: {
       repository: 'octo-org/app',
-      profile: 'merge: { allow_merge_commit: false, allow_squash_merge: false, allow_rebase_merge: false }\n',
+      profile: 'references: { rulesets: [base.yaml] }\n',
     },
   });
   const text = planned.result?.content?.[0]?.text ?? '';
-  if (planned.result?.isError !== true || !text.includes('Every merge method is off')) {
+  if (
+    planned.result?.isError !== true ||
+    !text.includes(`${examples}base.yaml is not a reusable rulesets definition`)
+  ) {
     throw new Error(`Unexpected plan reply: ${JSON.stringify(planned)}`);
   }
   const runtime = `node ${nodeVersion}`;

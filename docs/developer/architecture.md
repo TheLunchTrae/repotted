@@ -55,7 +55,7 @@ earlier profile rely on what a later one adds.
 
 A profile stands alone: it can't extend another, since applying profiles
 together covers that need. The schema keeps `extends` as a key that takes
-no value, so a file that still names one is refused at that key rather than
+no value, so a file that names one is refused at that key rather than
 dropped as an unknown field, which would apply it without what it built on,
 and the editor's **Remove invalid configuration** can take it out.
 `parseLayer` checks duplicate entry names and autolink prefixes in each file
@@ -67,8 +67,8 @@ such as `selected_actions`. `flattenSettings` gives each setting its path, as
 `has_wiki` or `selected_actions.verified_allowed`, and `unflattenSettings`
 turns paths back into settings, so merging, the sources the resolved profile
 records, and saving a staged apply's edits all read a group the same way. A
-ruleset, environment, label, or autolink replaces the base's entry of the same
-name or prefix whole, and `pages: { absent: true }` replaces a base's site. The
+ruleset, environment, label, or autolink replaces an earlier layer's entry of the same
+name or prefix whole, and `pages: { absent: true }` replaces an earlier layer's site. The
 resolved profile records which file sets each value, which
 `repotted profile --json` reports and the web app shows.
 
@@ -209,7 +209,7 @@ same way.
 
 `resolveProfile` also accepts replacement text for the file being resolved.
 It checks that text at the file's real path without writing, so an invalid
-file can be repaired while keeping inheritance and cycle checks. The web
+file can be repaired while keeping the checks on what it references. The web
 app's [repair editor](web-app.md#profiles) uses this for whole-file corrections
 and refuses to save over a changed file.
 
@@ -565,8 +565,8 @@ lists definitions relative to that profile. General Actions settings remain
 in the `actions` settings section. Definitions
 cannot inherit profiles or reference other definitions.
 
-`readListed` deduplicates inherited profiles before expanding their reference
-links. Each referenced definition applies immediately before its consumer's
+`readListed` refuses a profile listed twice, then expands each listed
+profile's reference links. Each referenced definition applies immediately before its consumer's
 inline layer. Reusing one definition from several consumers applies it at each
 consumer's position, so explicit later references keep their precedence. Source
 maps retain the definition's path. Normal resolved validation checks owner types

@@ -561,8 +561,8 @@ is separate from **New Actions policy**, **New ruleset**, and **New environment*
 which create named items in the profile. A profile can reference several
 Actions policies, rulesets, and environments. **Edit shared definition** opens the original in
 its library. **Remove** detaches the reference, and **Save** keeps reference
-edits with the profile's other changes. References inherited from a base are
-changed in that base. Inline entries replace shared entries of the same name.
+edits with the profile's other changes. In an apply's edits, references that come
+from a listed profile are changed in that profile. Inline entries replace shared entries of the same name.
 
 Reference changes preview the resolved entries before saving. Save those
 changes before editing the entries. Create a profile first, then choose

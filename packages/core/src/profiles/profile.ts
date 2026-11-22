@@ -1865,7 +1865,7 @@ export async function editLayer<Read extends LayerRead>(
 /**
  * Keeps the file's comments, line endings and indent width; YAML layout such
  * as quoting and list indentation may be normalized. The file changes only
- * when the result, laid over the profiles it extends, is a valid profile.
+ * when the result, with the definitions it references, is a valid profile.
  */
 export async function editProfile(file: string, edits: readonly ProfileEdit[]): Promise<ResolvedProfile> {
   return (await editLayer(file, edits, profileLayer)).resolved;

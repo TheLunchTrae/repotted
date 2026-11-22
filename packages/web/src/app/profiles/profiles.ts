@@ -724,28 +724,21 @@ export class Profiles {
     });
   }
 
-  /** Directly or through another: they stop loading without these profiles. */
+  /** The profiles that stop loading without these definitions, counting the unsaved references of open editors. */
   dependents(...listings: readonly ProfileListing[]): readonly ProfileListing[] {
     const gone = new Set(listings.map((listing) => listing.file));
-    const found = new Set<string>(gone);
+    const found = new Set<string>();
     for (const editor of this.#editors.value) {
       const references = Object.values(editor.references.value).flatMap((value) =>
         typeof value === 'string' ? [value] : (value ?? []),
       );
-      if (
-        !gone.has(editor.file) &&
-        references.some((reference) => found.has(resolve(dirname(editor.file), reference)))
-      ) {
+      if (references.some((reference) => gone.has(resolve(dirname(editor.file), reference)))) {
         found.add(editor.file);
       }
     }
-    for (let grew = true; grew;) {
-      grew = false;
-      for (const other of this.listings.value) {
-        if ((other.references ?? []).some((source) => found.has(source)) && !found.has(other.file)) {
-          found.add(other.file);
-          grew = true;
-        }
+    for (const other of this.listings.value) {
+      if ((other.references ?? []).some((source) => gone.has(source))) {
+        found.add(other.file);
       }
     }
     return this.listings.value.filter((other) => !gone.has(other.file) && found.has(other.file));
