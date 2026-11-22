@@ -921,9 +921,9 @@ usual settings and their problems. Choose its **Name** and **Folder** and
 change anything you want. **Save** adds it, with any drafts it has
 applying, as **Save** does on any profile. **Save as draft** adds it with
 your changes kept as a draft and its own drafts left as drafts. Either
-returns to the list it was imported from. Nothing is added until then, and leaving the page asks
-before it discards the import. Repotted never replaces a file that is
-already there.
+returns to the list it was imported from. Nothing is added until then,
+and leaving the page asks before it discards the import. Repotted never
+replaces a file that is already there.
 
 ### Delete a profile
 

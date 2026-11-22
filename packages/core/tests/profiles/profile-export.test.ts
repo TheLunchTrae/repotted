@@ -115,6 +115,21 @@ test('drafts that stop managing an entry are written in once, by the name GitHub
   expect(after.profile).toEqual(before.profile);
 });
 
+test('a definition’s unset of a name the profile drafts inline is left out, since one file cannot hold both', async () => {
+  await write(
+    'definitions/environment/qa.yaml',
+    'kind: environment\nenvironments: [{ name: QA }]\ndrafts: { unset: [environments/qa] }\n',
+  );
+  const file = await write(
+    'apps/qa.yaml',
+    'references: { environments: [../definitions/environment/qa.yaml] }\nenvironments: [{ name: qa, draft: true, wait_timer: 5 }]\n',
+  );
+  const before = await resolveProfile(file);
+  const after = await parseProfile(withBundledInside(readProfileImport(await exportProfile(file))), folder);
+  expect(after.drafts).toEqual({ environments: before.drafts.environments });
+  expect(after.profile).toEqual(before.profile);
+});
+
 describe('an imported file', () => {
   test('refuses a carried definition the profile does not reference', () => {
     expect(() => readProfileImport('bundled:\n  ./main.yaml: { kind: ruleset, rulesets: [{ name: Main }] }\n')).toThrow(

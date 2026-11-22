@@ -217,9 +217,9 @@ export function withBundledInside(imported: ProfileImport): string {
     const list = new YAMLSeq();
     list.items = items;
     document.set(section, list);
-    // An unset of an entry the profile replaces inline did nothing in the definition, so it is left out.
+    // The profile's own entries and drafts of a name outrank the definition's unset of it, so that unset is left out.
     const replacedInline = new Set(
-      inlineKeys.filter((key, index) => used.has(index) && key?.startsWith('entry:') === true),
+      inlineKeys.flatMap((key) => (key === undefined ? [] : [key.replace(/^draft:/u, 'entry:')])),
     );
     const unsetKey = (key: string): string | undefined =>
       key.startsWith(`${section}/`) ? entryKey(section, { name: key.slice(section.length + 1) }) : undefined;

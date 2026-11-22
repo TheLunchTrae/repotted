@@ -1183,9 +1183,11 @@ export class Profiles {
     await this.#write(async () => {
       // After the sync, which may have brought in a profile of that name, or with the profiles kept elsewhere.
       failed =
-        this.folder.value === staged.folder
-          ? (this.nameProblem(name, folder) ?? folderProblem(folder))
-          : 'Where profiles are kept changed, so the import was not added.';
+        this.importing.peek() !== importing
+          ? 'The import was cancelled.'
+          : this.folder.value === staged.folder
+            ? (this.nameProblem(name, folder) ?? folderProblem(folder))
+            : 'Where profiles are kept changed, so the import was not added.';
       if (failed === undefined) {
         await saveStagedImport(staged, this.#fileOf(name.trim(), folder)).catch((error: unknown) => {
           failed = messageOf(error);

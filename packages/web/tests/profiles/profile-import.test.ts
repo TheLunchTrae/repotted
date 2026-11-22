@@ -78,6 +78,17 @@ test('a definition already there with the same settings is used rather than copi
   });
 });
 
+test('a definition matched at staging that is gone at save is refused', async () => {
+  await write(
+    '/profiles/definitions/ruleset/Main.yaml',
+    'kind: ruleset\nrulesets: [{ name: Main, enforcement: active }]\n',
+  );
+  const staged = await stage('reusable');
+  await files.rm('/profiles/definitions/ruleset/Main.yaml');
+  await expect(saveStagedImport(staged)).rejects.toThrow('main is no longer there.');
+  await expect(files.readFile('/profiles/apps/service.yaml', 'utf8')).rejects.toThrow('ENOENT');
+});
+
 test('a taken name refuses to save until the definition is renamed', async () => {
   await write(
     '/profiles/definitions/ruleset/main.yaml',

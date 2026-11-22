@@ -157,12 +157,14 @@ export async function stageProfileImport(options: {
 export async function saveStagedImport(staged: StagedImport, destination = staged.destination): Promise<void> {
   // Placed again, since a sync may have brought in a definition of the same name since the import was staged.
   const definitions = await Promise.all(
-    staged.definitions.map((item) =>
-      item.state === 'new'
-        ? placed(staged.folder, item.bundled, item.name).then((now) => ({ item, now }))
-        : Promise.resolve({ item, now: item }),
-    ),
+    staged.definitions.map((item) => placed(staged.folder, item.bundled, item.name).then((now) => ({ item, now }))),
   );
+  const gone = definitions.filter(({ item, now }) => item.state === 'same' && now.state === 'new');
+  if (gone.length > 0) {
+    throw new Error(
+      `${gone.map(({ now }) => now.name).join(', ')} is no longer there. Cancel and import the file again.`,
+    );
+  }
   const taken = definitions.filter(({ now }) => now.state === 'taken');
   if (taken.length > 0) {
     throw new Error(

@@ -1,5 +1,5 @@
 import { resolveProfile } from '@repotted/core';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { FakeGitRepository } from '../../../core/tests/support/fake-git.js';
@@ -148,4 +148,35 @@ test('a cancel while the import is staged leaves no import and no staged files',
   expect(await choosing).toBe('The import was cancelled.');
   expect(profiles.importing.value).toBeUndefined();
   await expect(files.readdir('/imports', { withFileTypes: true })).rejects.toThrow('ENOENT');
+});
+
+test('a cancel while the save waits its turn behind a sync adds nothing', async () => {
+  const github = new FakeGitRepository();
+  github.write({ 'profiles/base.yaml': 'repository: { has_wiki: false }\n' });
+  const held = Promise.withResolvers<undefined>();
+  let holding = false;
+  const request = vi.fn<FakeGitRepository['request']>(async (method, path, body) => {
+    if (holding) {
+      await held.promise;
+    }
+    return github.request(method, path, body);
+  });
+  const profiles = new Profiles({ request }, { read: () => undefined, write: () => undefined }, () => undefined);
+  expect(await profiles.connect('lunch/config', 'profiles', false)).toBeUndefined();
+  await profiles.startImport('service.yaml', 'repository: { has_issues: true }\n');
+
+  holding = true;
+  const calls = request.mock.calls.length;
+  const refreshing = profiles.refresh();
+  await vi.waitFor(() => {
+    expect(request.mock.calls.length).toBeGreaterThan(calls);
+  });
+  const saving = profiles.saveImport('service', '');
+  const cancelling = profiles.cancelImport();
+  held.resolve(undefined);
+  await refreshing;
+
+  expect(await saving).toBe('The import was cancelled.');
+  await cancelling;
+  expect(profiles.listings.value.map((listing) => listing.name)).toEqual(['base']);
 });
