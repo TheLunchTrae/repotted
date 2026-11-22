@@ -172,10 +172,13 @@ export async function saveStagedImport(staged: StagedImport, destination = stage
     );
   }
   // A new definition goes where it was staged for, or to the one of the same settings that is there now.
+  // One used as it was at staging is named as it is now, which a rename may have changed in case alone.
   const moved = new Map(
-    definitions
-      .filter(({ item }) => item.state === 'new')
-      .map(({ item, now }) => [join(staged.staging, relative(staged.folder, item.file)), now.file] as const),
+    definitions.map(({ item, now }) =>
+      item.state === 'new'
+        ? ([join(staged.staging, relative(staged.folder, item.file)), now.file] as const)
+        : ([item.file, now.file] as const),
+    ),
   );
   const fromStaging = (target: string): string =>
     moved.get(target) ??
