@@ -846,7 +846,7 @@ test('an import that another start overtakes says so, and leaves the later apply
   expect(await pending()).toHaveLength(1);
 });
 
-test('imported settings for another owner type say to import a file for this one, since no profile can be copied', async () => {
+test('imported settings for another owner type say to change the edits, since no profile can be copied', async () => {
   const github = new FakeGitHub();
   github.state.ownerType = 'User';
   const apply = new Apply(github, () => undefined);
@@ -856,6 +856,6 @@ test('imported settings for another owner type say to import a file for this one
 
   const state = apply.state.value;
   expect(state.kind === 'failed' ? state.message : `not failed: ${state.kind}`).toContain(
-    'Import a file for personal accounts instead.',
+    'Use edits for personal accounts, or take out their owner_type.',
   );
 });
