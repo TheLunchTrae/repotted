@@ -2,6 +2,7 @@ import type { JSX } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Spinner } from '../layout/loading.js';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
+import { ImportedNotice } from './imported-notice.js';
 
 import type { BatchApply, BatchMemberView } from '../../app/apply/batch-apply.js';
 import {
@@ -365,6 +366,7 @@ export function BatchPage({ batch, router, earlierApplies }: BatchProps): JSX.El
             {state.message}
           </p>
         )}
+        {state.kind === 'editing' && <ImportedNotice imported={batch.imported.value} />}
         {state.kind === 'editing' && editor !== undefined && (
           <ProfileSettings
             key={editor.file}

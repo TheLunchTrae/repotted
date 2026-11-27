@@ -1,6 +1,7 @@
 import { type InstallationMissingPermissions, permissionsInProse } from '@repotted/core';
 import type { JSX, RefObject } from 'preact';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { ChangeOnce } from '../apply/change-once.js';
 import { PendingButton } from '../layout/pending-button.js';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
@@ -841,6 +842,8 @@ interface PanelProps {
   readonly onCompare: (repository: string, profile: ComparedProfile) => void;
   /** With `once`, starts an apply that changes settings without a profile. */
   readonly onApply: (repository: string, profile: ComparedProfile | 'once') => void;
+  /** Starts an apply that changes what the file sets, once; says why when it can't. */
+  readonly onApplyImport: (repository: string, fileName: string, text: string) => Promise<string | undefined>;
   readonly onApplyProfiles: (repository: string, profiles: readonly ComparedProfile[]) => void;
   readonly assignments: RepositoryProfiles;
   /** Goes back to the list, given when the panel is a screen of its own, as on a phone. */
@@ -855,6 +858,7 @@ function RepositoryPanel({
   onCapture,
   onCompare,
   onApply,
+  onApplyImport,
   onApplyProfiles,
   assignments,
   onBack,
@@ -939,15 +943,12 @@ function RepositoryPanel({
       >
         Capture as a new profile
       </button>
-      <button
-        class="button"
-        type="button"
-        onClick={() => {
+      <ChangeOnce
+        onEdit={() => {
           onApply(repository.full_name, 'once');
         }}
-      >
-        Change settings once
-      </button>
+        onImport={(fileName, text) => onApplyImport(repository.full_name, fileName, text)}
+      />
       <form
         class="panel-form"
         onSubmit={(event) => {
@@ -1146,6 +1147,13 @@ interface RepositoriesProps {
   readonly assignments: RepositoryProfiles;
   /** With `once`, starts a batch that changes settings without a profile. */
   readonly onBatch: (repositories: readonly string[], profile: ComparedProfile | 'once') => void;
+  /** Starts a batch that changes what the file sets, once; says why when it can't. */
+  readonly onBatchImport: (
+    repositories: readonly string[],
+    fileName: string,
+    text: string,
+  ) => Promise<string | undefined>;
+  readonly onApplyImport: PanelProps['onApplyImport'];
   readonly onReviewProfiles: (repositories: readonly string[]) => void;
   /** While an apply writes to GitHub, when no review can start. */
 }
@@ -1155,6 +1163,7 @@ interface SelectedProps {
   readonly onDialog: (dialog: FolderDialog) => void;
   readonly profiles: Profiles;
   readonly onBatch: RepositoriesProps['onBatch'];
+  readonly onBatchImport: RepositoriesProps['onBatchImport'];
   readonly onMoved: (folder: string | undefined) => void;
   readonly onDeselectAll: () => void;
 }
@@ -1164,6 +1173,7 @@ function SelectedPanel({
   onDialog,
   profiles,
   onBatch,
+  onBatchImport,
   onMoved,
   onDeselectAll,
 }: SelectedProps): JSX.Element {
@@ -1269,18 +1279,21 @@ function SelectedPanel({
           </>
         )}
       </form>
-      <button
-        class="button"
-        type="button"
-        onClick={() => {
+      <ChangeOnce
+        onEdit={() => {
           onBatch(
             selected.map((repository) => repository.full_name),
             'once',
           );
         }}
-      >
-        Change settings once
-      </button>
+        onImport={(fileName, text) =>
+          onBatchImport(
+            selected.map((repository) => repository.full_name),
+            fileName,
+            text,
+          )
+        }
+      />
       <div class="panel-actions">
         <button class="button button-quiet" type="button" onClick={onDeselectAll}>
           Deselect all
@@ -1315,9 +1328,11 @@ export function RepositoriesPage({
   onCapture,
   onCompare,
   onApply,
+  onApplyImport,
   onApplyProfiles,
   assignments,
   onBatch,
+  onBatchImport,
   onReviewProfiles,
 }: RepositoriesProps): JSX.Element {
   const selected = repositories.selected.value;
@@ -1676,6 +1691,7 @@ export function RepositoriesPage({
           onDialog={setDialog}
           profiles={profiles}
           onBatch={onBatch}
+          onBatchImport={onBatchImport}
           onMoved={(folder) => {
             focusFolder(folder, 'toggle');
           }}
@@ -1691,6 +1707,7 @@ export function RepositoriesPage({
             onCapture={onCapture}
             onCompare={onCompare}
             onApply={onApply}
+            onApplyImport={onApplyImport}
             onApplyProfiles={onApplyProfiles}
             assignments={assignments}
             onBack={

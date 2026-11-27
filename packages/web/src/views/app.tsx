@@ -377,6 +377,24 @@ function SignedIn({
               applyStartedIn.current['/apply'] = '/';
               router.go('/apply');
             }}
+            onApplyImport={async (repository, fileName, text) => {
+              const problem = await apply.startFromImport(repository, fileName, text);
+              if (problem === undefined) {
+                applyStartedIn.current['/apply'] = '/';
+                router.go('/apply');
+              }
+              return problem;
+            }}
+            onBatchImport={async (names, fileName, text) => {
+              const problem = await batch.startFromImport(names, fileName, text);
+              if (problem === undefined) {
+                // The selection has done its work once a batch started from it holds the repositories.
+                repositories.deselectAll();
+                applyStartedIn.current['/batch'] = '/';
+                router.go('/batch');
+              }
+              return problem;
+            }}
             onApplyProfiles={(repository, assigned) => {
               run(apply.startFromProfiles(repository, assigned));
               applyStartedIn.current['/apply'] = '/';

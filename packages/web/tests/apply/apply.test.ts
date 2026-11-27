@@ -789,3 +789,43 @@ test("an apply's edit that turns off what the profile sets waits for a yes, and 
   ]);
   expect(state.kind === 'reviewed' ? state.warnings : undefined).toEqual([]);
 });
+
+test('an imported file is applied once, as the edits of an apply with no profile, and nothing is saved', async () => {
+  const github = new FakeGitHub();
+  const apply = new Apply(github, () => undefined);
+
+  const problem = await apply.startFromImport(
+    'lunch/app',
+    'web.yaml',
+    'repository: { has_wiki: false }\nlabels: [{ name: bug, color: d73a4a }, { name: later, draft: true }]\n',
+  );
+
+  expect(problem).toBeUndefined();
+  expect(apply.state.value).toMatchObject({ kind: 'editing', fromProfile: false, profileName: '' });
+  expect(apply.imported.value).toEqual({ file: 'web.yaml', leftOutDrafts: true });
+  await apply.review();
+  expect(rows(apply)).toEqual(['repository.has_wiki', 'new label']);
+  await apply.apply();
+
+  expect(writes(github)).toEqual(['PATCH /repos/lunch/app', 'POST /repos/lunch/app/labels']);
+  expect(github.state.labels.map((label) => label.name)).toContain('bug');
+  expect(github.state.labels.map((label) => label.name)).not.toContain('later');
+  expect(await readdir('/profiles', { withFileTypes: true }).catch(() => [])).toEqual([]);
+  expect(await pending()).toEqual([]);
+});
+
+test('an imported file that cannot be applied says why and starts no apply', async () => {
+  const apply = new Apply(new FakeGitHub(), () => undefined);
+
+  expect(await apply.startFromImport('lunch/app', 'web.yaml', 'repository: { has_wiki: broken }\n')).toMatch(
+    /has_wiki/u,
+  );
+  expect(apply.state.value).toEqual({ kind: 'idle' });
+  expect(apply.imported.value).toBeUndefined();
+  expect(await pending()).toEqual([]);
+
+  expect(await apply.startFromImport('lunch/app', 'web.yaml', 'references: { rulesets: [./main.yaml] }\n')).toMatch(
+    /without carrying it/u,
+  );
+  expect(apply.state.value).toEqual({ kind: 'idle' });
+});

@@ -4,7 +4,12 @@ import path from 'node:path';
 
 import { afterAll, describe, expect, test } from 'vitest';
 
-import { exportProfile, readProfileImport, withBundledInside } from '../../src/profiles/profile-export.js';
+import {
+  exportProfile,
+  oneTimeSettings,
+  readProfileImport,
+  withBundledInside,
+} from '../../src/profiles/profile-export.js';
 import { parseProfile, resolveProfile } from '../../src/profiles/profile.js';
 
 const folder = await realpath(await mkdtemp(path.join(tmpdir(), 'repotted-export-')));
@@ -179,4 +184,41 @@ test('a ruleset GitHub exported reads as a ruleset definition without GitHub’s
       bypass_actors: [{ actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'always' }],
     },
   ]);
+});
+
+describe('the settings of an import for a one-time apply', () => {
+  test('write in the definitions an exported profile carries and leave its drafts out', async () => {
+    const { settings, leftOutDrafts } = oneTimeSettings(readProfileImport(await exportProfile(consumer)));
+    expect(leftOutDrafts).toBe(true);
+    expect(settings['references']).toBeUndefined();
+    expect(settings['owner_type']).toBe('organization');
+    expect(settings['rulesets']).toEqual([
+      { name: 'Main', enforcement: 'active' },
+      { name: 'Tags', enforcement: 'disabled' },
+      { name: 'Extra', enforcement: 'disabled' },
+    ]);
+    expect(settings['environments']).toEqual([{ name: 'production', wait_timer: 15 }, { name: 'Staging' }]);
+    expect(settings['actions_policies']).toEqual([expect.objectContaining({ name: 'Release', enforcement: 'active' })]);
+  });
+
+  test('of a definition are its entries, without its kind', () => {
+    expect(oneTimeSettings(readProfileImport('kind: environment\nenvironments: [{ name: prod }]\n'))).toEqual({
+      settings: { environments: [{ name: 'prod' }] },
+      leftOutDrafts: false,
+    });
+  });
+
+  test('refuse references the file does not carry, since nothing saved can supply them', () => {
+    expect(() =>
+      oneTimeSettings(readProfileImport('references: { rulesets: [./main.yaml] }\nrepository: { has_wiki: false }\n')),
+    ).toThrow('references ./main.yaml without carrying it');
+  });
+
+  test('refuse a file of drafts alone, which would apply nothing', () => {
+    expect(() =>
+      oneTimeSettings(
+        readProfileImport('drafts: { repository: { has_wiki: false } }\nlabels: [{ name: bug, draft: true }]\n'),
+      ),
+    ).toThrow('only drafts');
+  });
 });

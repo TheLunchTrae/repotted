@@ -264,7 +264,9 @@ To start one, open a repository and either:
 
 - pick a profile and click **Apply**, to make the repository match the
   profile
-- click **Change settings once**, to change settings without a profile
+- under **Change settings once**, click **Edit** to change settings without
+  a profile, or **Import** to apply what a file sets, also without a profile
+  ([import once](#import-settings-once))
 
 An apply has two steps, and opens on the first.
 
@@ -479,8 +481,9 @@ closes.
 ### Change settings once on several repositories
 
 To make the same change to several repositories without a profile, select
-them on the **Repositories** page and click **Change settings once** in the
-panel. Like [a change to one repository](#apply-changes-to-a-repository),
+them on the **Repositories** page and click **Edit** under **Change settings
+once** in the panel, or **Import** to start from a file
+([import once](#import-settings-once)). Like [a change to one repository](#apply-changes-to-a-repository),
 it has two steps.
 
 The first step shows the one-off edits, in the same editor as a profile.
@@ -924,6 +927,21 @@ your changes kept as a draft and its own drafts left as drafts. Either
 returns to the list it was imported from. Nothing is added until then,
 and leaving the page asks before it discards the import. Repotted never
 replaces a file that is already there.
+
+### Import settings once
+
+**Import** under **Change settings once**, on a repository's panel or on
+the panel for selected repositories, applies a file once without adding
+anything to your profiles or libraries. It takes any file the other
+**Import** buttons take: a profile, an Actions policy, a ruleset, an
+environment, or a ruleset that GitHub exported.
+
+The file's settings open as the apply's one-off edits, under a note naming
+the file, and the apply goes on as any change of settings once does. A
+profile's included definitions are written in. Its drafts are left out, as
+every apply leaves drafts out. A file that names reusable definitions it
+doesn't include, or whose settings aren't valid, is refused before the apply
+starts, with why.
 
 ### Delete a profile
 

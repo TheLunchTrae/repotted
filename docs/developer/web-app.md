@@ -403,6 +403,15 @@ in the profiles' queue, never over a file, and removes what it wrote when a
 write fails. The editor's `canSaveNewFile` lets Save add the file without a
 change first. [Imports](state-machines.md#imports) has its states.
 
+An import into a one-time apply skips the staging folder, since nothing is
+saved. `oneTimeSettings` reads the file as `withBundledInside` writes it,
+drops its drafts, which no staged apply holds, and refuses references it
+doesn't carry, since a staged apply under `/apply` has no profiles folder to
+resolve them from. `Apply.startFromImport` and `BatchApply.startFromImport`
+pass the settings to `createStagedApply` as the apply's first edits, so the
+staged apply's own validation checks them, and close the apply again when it
+refuses them.
+
 `SharedDefinition` adds a reference picker to each related profile editor
 tab. Profile creation leaves these choices to the editor; duplication
 retains existing references. An existing editor previews and saves

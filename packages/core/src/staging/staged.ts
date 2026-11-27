@@ -368,6 +368,8 @@ export async function createStagedApply(
   repository: string,
   profiles: readonly string[],
   authoritative: readonly AuthoritativeSection[] = [],
+  /** One-off edits it starts with, as a profile writes them. */
+  edits: Readonly<Record<string, unknown>> = {},
 ): Promise<StagedApply> {
   authoritativeSchema.parse(authoritative);
   const repo = parseRepo(repository);
@@ -381,6 +383,10 @@ export async function createStagedApply(
     apply_to: `${repo.owner}/${repo.name}`,
     ...(authoritative.length === 0 ? {} : { authoritative }),
   };
+  const shared = Object.keys(edits).filter((key) => Object.hasOwn(stagedFields, key));
+  if (shared.length > 0) {
+    throw new ProfileError(`One-off edits cannot set ${shared.join(', ')}`);
+  }
   if (profiles.length > 1) {
     await resolveProfilesTogether(profiles);
   }
@@ -396,7 +402,7 @@ export async function createStagedApply(
     data['extends'] = relativePaths.length === 1 ? relativePaths[0] : relativePaths;
   }
   try {
-    await writeFile(file, `${lines.join('\n')}\n${stringify(data, { lineWidth: 0 })}`, { flag: 'wx' });
+    await writeFile(file, `${lines.join('\n')}\n${stringify({ ...data, ...edits }, { lineWidth: 0 })}`, { flag: 'wx' });
   } catch (error) {
     throw new ProfileError(`Cannot start a staged apply in ${file}`, { cause: error });
   }
