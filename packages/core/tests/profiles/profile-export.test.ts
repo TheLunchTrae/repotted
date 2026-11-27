@@ -214,6 +214,20 @@ describe('the settings of an import for a one-time apply', () => {
     ).toThrow('references ./main.yaml without carrying it');
   });
 
+  test('refuse a definition that sets more than its own section, as its library would', () => {
+    expect(() =>
+      oneTimeSettings(
+        readProfileImport('kind: environment\nenvironments: [{ name: prod }]\nrepository: { has_wiki: false }\n'),
+      ),
+    ).toThrow('environment definitions may only set that section (environments)');
+  });
+
+  test('refuse a profile that extends another, which a one-time apply would otherwise apply too', () => {
+    expect(() => oneTimeSettings(readProfileImport('extends: ./base.yaml\nrepository: { has_wiki: false }\n'))).toThrow(
+      'A profile cannot extend another',
+    );
+  });
+
   test('refuse a file of drafts alone, which would apply nothing', () => {
     expect(() =>
       oneTimeSettings(

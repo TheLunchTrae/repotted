@@ -75,6 +75,12 @@ export interface ImportedEdits {
   readonly leftOutDrafts: boolean;
 }
 
+/** A one-time apply from a file started, was refused with why, or gave way to another start or a leave. */
+export type ImportStart =
+  | { readonly kind: 'started' }
+  | { readonly kind: 'refused'; readonly problem: string }
+  | { readonly kind: 'overtaken' };
+
 interface Target {
   readonly repository: string;
   readonly profileName: string;
@@ -247,22 +253,25 @@ export class Apply {
    * Nothing is saved to the profiles. Says why when the file can't be
    * applied, and then no apply starts.
    */
-  async startFromImport(repository: string, fileName: string, text: string): Promise<string | undefined> {
+  async startFromImport(repository: string, fileName: string, text: string): Promise<ImportStart> {
     let read: OneTimeSettings;
     try {
       read = oneTimeSettings(readProfileImport(text));
     } catch (error) {
-      return messageOf(error);
+      return { kind: 'refused', problem: messageOf(error) };
     }
     const imported = { file: fileName, leftOutDrafts: read.leftOutDrafts };
     await this.#start(repository, [], false, [], read.settings, imported);
     const state = this.state.value;
-    // Only while this apply is the one open, since another may have started meanwhile.
-    if (state.kind === 'failed' && this.imported.value === imported) {
-      await this.close();
-      return state.message;
+    // Another start, or leaving the page, takes the file's place, and then this one is done.
+    if (this.imported.value !== imported) {
+      return { kind: 'overtaken' };
     }
-    return undefined;
+    if (state.kind === 'failed') {
+      await this.close();
+      return { kind: 'refused', problem: state.message };
+    }
+    return { kind: 'started' };
   }
 
   async #start(

@@ -598,13 +598,13 @@ test('an imported file is the edits every repository of a one-time batch gets', 
   const { github, of } = fleet('lunch/app', 'lunch/api');
   const batch = new BatchApply(github, () => undefined);
 
-  const problem = await batch.startFromImport(
+  const start = await batch.startFromImport(
     ['lunch/app', 'lunch/api'],
     'production.yaml',
     'kind: environment\nenvironments: [{ name: production, wait_timer: 15 }]\n',
   );
 
-  expect(problem).toBeUndefined();
+  expect(start).toEqual({ kind: 'started' });
   expect(batch.state.value).toMatchObject({ kind: 'editing', repositories: ['lunch/app', 'lunch/api'] });
   expect(batch.imported.value).toEqual({ file: 'production.yaml', leftOutDrafts: false });
   await batch.review();
@@ -622,13 +622,28 @@ test('an imported file a one-time batch cannot apply says why and starts no batc
   const { github } = fleet('lunch/app');
   const batch = new BatchApply(github, () => undefined);
 
-  expect(
-    await batch.startFromImport(
-      ['lunch/app'],
-      'broken.yaml',
-      'environments: [{ name: production, wait_timer: soon }]\n',
-    ),
-  ).toMatch(/wait_timer/u);
+  const start = await batch.startFromImport(
+    ['lunch/app'],
+    'broken.yaml',
+    'environments: [{ name: production, wait_timer: soon }]\n',
+  );
+  expect(start.kind === 'refused' ? start.problem : `not refused: ${start.kind}`).toMatch(/wait_timer/u);
   expect(batch.state.value).toEqual({ kind: 'idle' });
   expect(await pending()).toEqual([]);
+});
+
+test('an import into a batch that another start overtakes says so, and leaves the later batch open', async () => {
+  const { github } = fleet('lunch/app', 'lunch/api');
+  const batch = new BatchApply(github, () => undefined);
+
+  const overtaken = batch.startFromImport(
+    ['lunch/app'],
+    'broken.yaml',
+    'environments: [{ name: production, wait_timer: soon }]\n',
+  );
+  const later = batch.startWithoutProfile(['lunch/api']);
+
+  expect(await overtaken).toEqual({ kind: 'overtaken' });
+  await later;
+  expect(batch.state.value).toMatchObject({ kind: 'editing', repositories: ['lunch/api'] });
 });

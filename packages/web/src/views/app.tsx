@@ -378,22 +378,22 @@ function SignedIn({
               router.go('/apply');
             }}
             onApplyImport={async (repository, fileName, text) => {
-              const problem = await apply.startFromImport(repository, fileName, text);
-              if (problem === undefined) {
+              const start = await apply.startFromImport(repository, fileName, text);
+              if (start.kind === 'started') {
                 applyStartedIn.current['/apply'] = '/';
                 router.go('/apply');
               }
-              return problem;
+              return start.kind === 'refused' ? start.problem : undefined;
             }}
             onBatchImport={async (names, fileName, text) => {
-              const problem = await batch.startFromImport(names, fileName, text);
-              if (problem === undefined) {
+              const start = await batch.startFromImport(names, fileName, text);
+              if (start.kind === 'started') {
                 // The selection has done its work once a batch started from it holds the repositories.
                 repositories.deselectAll();
                 applyStartedIn.current['/batch'] = '/';
                 router.go('/batch');
               }
-              return problem;
+              return start.kind === 'refused' ? start.problem : undefined;
             }}
             onApplyProfiles={(repository, assigned) => {
               run(apply.startFromProfiles(repository, assigned));

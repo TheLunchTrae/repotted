@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 import { type GitHub, parseRepo, repoPattern } from '../github/client.js';
 import { authoritativeSchema, type AuthoritativeSection } from '../plan/ownership.js';
-import { createPlan, type Plan, skippedDrafts } from '../plan/plan.js';
+import { createPlan, OwnerMismatchError, type Plan, skippedDrafts } from '../plan/plan.js';
 import {
   type Adjust,
   type Drafts,
@@ -652,7 +652,13 @@ export async function planStagedApply(
         ? {}
         : { exclude: [...new Set([...resolved.exclude, ...read.head.aliases])] }),
     },
-  );
+  ).catch((error: unknown) => {
+    // With no profile, the owner type came with the edits, so there is no profile to copy.
+    if (error instanceof OwnerMismatchError && resolved.profiles.length === 0) {
+      throw new OwnerMismatchError(parseRepo(resolved.repository), error.profile, error.repository, 'edits');
+    }
+    throw error;
+  });
   // Live reads can overlap a source edit. Do not return a plan whose inputs
   // have already changed, including rename aliases protected by exclusions.
   const latest = await resolveLayer(file, stagedLayer);

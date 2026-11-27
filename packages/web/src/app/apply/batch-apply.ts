@@ -37,7 +37,7 @@ import {
 import { profileName, profileVersion } from '../repositories/repository-profiles.js';
 import type { AppliedVersion } from '../repositories/saved-assignments.js';
 import { type ApplyQueue, type AssignmentRecord, pageQueue } from './apply-queue.js';
-import { type ImportedEdits, stagedStore } from './apply.js';
+import { type ImportedEdits, type ImportStart, stagedStore } from './apply.js';
 import {
   type ComparedProfile,
   type CompareSection,
@@ -353,7 +353,6 @@ export class BatchApply {
     this.#assigned = new Map();
     const folder = `/apply/${crypto.randomUUID()}/batch`;
     const edits = `${dirname(folder)}/edits.yaml`;
-    const settings = editsToStart;
     this.#folder = folder;
     this.#edits = edits;
     await this.#work('', [], async (_folder, current) => {
@@ -361,7 +360,7 @@ export class BatchApply {
       const batch = await createBatch(folder, { profiles: [], repositories });
       await mkdir(dirname(edits), { recursive: true });
       // Only the edits are read from it: it is never planned, so the repository it names is any of the batch's.
-      await createStagedApply(edits, first, [], [], settings);
+      await createStagedApply(edits, first, [], [], editsToStart);
       const editor = new ProfileEditor(edits, undefined, stagedStore);
       await editor.load();
       if (!current()) {
@@ -377,22 +376,25 @@ export class BatchApply {
    * Nothing is saved to the profiles. Says why when the file can't be
    * applied, and then no batch starts.
    */
-  async startFromImport(repositories: readonly string[], fileName: string, text: string): Promise<string | undefined> {
+  async startFromImport(repositories: readonly string[], fileName: string, text: string): Promise<ImportStart> {
     let read: OneTimeSettings;
     try {
       read = oneTimeSettings(readProfileImport(text));
     } catch (error) {
-      return messageOf(error);
+      return { kind: 'refused', problem: messageOf(error) };
     }
     const imported = { file: fileName, leftOutDrafts: read.leftOutDrafts };
     await this.startWithoutProfile(repositories, read.settings, imported);
     const state = this.state.value;
-    // Only while this batch is the one open, since another may have started meanwhile.
-    if (state.kind === 'failed' && this.imported.value === imported) {
-      await this.close();
-      return state.message;
+    // Another start, or leaving the page, takes the file's place, and then this one is done.
+    if (this.imported.value !== imported) {
+      return { kind: 'overtaken' };
     }
-    return undefined;
+    if (state.kind === 'failed') {
+      await this.close();
+      return { kind: 'refused', problem: state.message };
+    }
+    return { kind: 'started' };
   }
 
   /**

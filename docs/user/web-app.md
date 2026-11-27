@@ -940,8 +940,10 @@ The file's settings open as the apply's one-off edits, under a note naming
 the file, and the apply goes on as any change of settings once does. A
 profile's included definitions are written in. Its drafts are left out, as
 every apply leaves drafts out. A file that names reusable definitions it
-doesn't include, or whose settings aren't valid, is refused before the apply
-starts, with why.
+doesn't include, whose settings aren't valid, or that is a definition setting
+more than its own section, is refused before the apply starts, with why. A
+file for one owner type, such as an organization profile, fails its review on
+a repository of the other type.
 
 ### Delete a profile
 

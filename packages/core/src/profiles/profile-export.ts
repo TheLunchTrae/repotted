@@ -304,6 +304,21 @@ export function oneTimeSettings(imported: ProfileImport): OneTimeSettings {
       `The file references ${named.length === 0 ? 'reusable definitions' : named.join(', ')} without carrying ${named.length === 1 ? 'it' : 'them'}. Export the profile from Repotted to carry its definitions.`,
     );
   }
+  if (read['extends'] !== undefined) {
+    throw new ProfileError(
+      'A profile cannot extend another. Copy the settings it needs into the file, or apply the profiles together.',
+    );
+  }
+  // A definition sets only its own section, as its library holds it to.
+  const section = imported.kind === undefined ? undefined : definitionSections[imported.kind];
+  const outside = Object.keys(read).filter(
+    (key) => section !== undefined && ![section, 'kind', 'owner_type', 'drafts'].includes(key),
+  );
+  if (outside.length > 0) {
+    throw new ProfileError(
+      `${imported.kind ?? ''} definitions may only set that section (${section ?? ''}), its drafts, and owner_type`,
+    );
+  }
   const lists = new Set(['autolinks', 'actions_policies', 'rulesets', 'environments', 'labels']);
   const settings: Record<string, unknown> = {};
   let leftOutDrafts = false;
