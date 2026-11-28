@@ -2,6 +2,7 @@ import type { JSX } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Spinner } from '../layout/loading.js';
 import { PendingButton, usePendingAction } from '../layout/pending-button.js';
+import { ImportedNotice } from './imported-notice.js';
 
 import { repottedAppInstallUrl } from '../../app/account/github-app.js';
 import type { Apply } from '../../app/apply/apply.js';
@@ -208,6 +209,7 @@ export function ApplyPage({ apply, router, earlierApplies }: ApplyProps): JSX.El
         )}
         {state.kind === 'editing' && editor !== undefined && (
           <>
+            <ImportedNotice imported={apply.imported.value} />
             {apply.editError.value !== undefined && (
               <p class="notice notice-problem" role="alert">
                 {apply.editError.value}

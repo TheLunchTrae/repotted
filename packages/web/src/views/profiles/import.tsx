@@ -32,7 +32,13 @@ function landingOf(kind: DefinitionKind | undefined): string {
   return definitionTypes.find((item) => item.kind === kind)?.path ?? '/profiles';
 }
 
-function ImportProblem({ problem, onClose }: { readonly problem: string; readonly onClose: () => void }): JSX.Element {
+export function ImportProblem({
+  problem,
+  onClose,
+}: {
+  readonly problem: string;
+  readonly onClose: () => void;
+}): JSX.Element {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     dialog.current?.showModal();

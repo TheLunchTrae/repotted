@@ -13,8 +13,11 @@ import {
   type GitHub,
   isBatch,
   leaveOut,
+  oneTimeSettings,
+  type OneTimeSettings,
   planBatch,
   readBatch,
+  readProfileImport,
   resolveStagedApply,
   StalePlanError,
 } from '@repotted/core';
@@ -34,7 +37,7 @@ import {
 import { profileName, profileVersion } from '../repositories/repository-profiles.js';
 import type { AppliedVersion } from '../repositories/saved-assignments.js';
 import { type ApplyQueue, type AssignmentRecord, pageQueue } from './apply-queue.js';
-import { stagedStore } from './apply.js';
+import { type ImportedEdits, type ImportStart, stagedStore } from './apply.js';
 import {
   type ComparedProfile,
   type CompareSection,
@@ -231,6 +234,9 @@ export class BatchApply {
     );
   });
 
+  /** The file a one-time batch's edits came from, while the batch lasts. */
+  readonly imported = signal<ImportedEdits | undefined>(undefined);
+
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
   readonly #assignments: ProfileAssignments | undefined;
@@ -332,12 +338,17 @@ export class BatchApply {
    * Each repository starts from what it has, and every one gets the same
    * one-off edits, which open first. Nothing is recorded on the repositories.
    */
-  async startWithoutProfile(repositories: readonly string[]): Promise<void> {
+  async startWithoutProfile(
+    repositories: readonly string[],
+    editsToStart: Readonly<Record<string, unknown>> = {},
+    imported?: ImportedEdits,
+  ): Promise<void> {
     const [first] = repositories;
     if (first === undefined) {
       return;
     }
     const closing = this.#moveOn();
+    this.imported.value = imported;
     this.addToRepositoryProfiles.value = true;
     this.#assigned = new Map();
     const folder = `/apply/${crypto.randomUUID()}/batch`;
@@ -349,7 +360,7 @@ export class BatchApply {
       const batch = await createBatch(folder, { profiles: [], repositories });
       await mkdir(dirname(edits), { recursive: true });
       // Only the edits are read from it: it is never planned, so the repository it names is any of the batch's.
-      await createStagedApply(edits, first, []);
+      await createStagedApply(edits, first, [], [], editsToStart);
       const editor = new ProfileEditor(edits, undefined, stagedStore);
       await editor.load();
       if (!current()) {
@@ -358,6 +369,32 @@ export class BatchApply {
       this.editor.value = editor;
       return { kind: 'editing', profileName: '', repositories: batch.members.map((member) => member.repository) };
     });
+  }
+
+  /**
+   * A one-time batch whose edits are what the file sets, opened on them.
+   * Nothing is saved to the profiles. Says why when the file can't be
+   * applied, and then no batch starts.
+   */
+  async startFromImport(repositories: readonly string[], fileName: string, text: string): Promise<ImportStart> {
+    let read: OneTimeSettings;
+    try {
+      read = oneTimeSettings(readProfileImport(text));
+    } catch (error) {
+      return { kind: 'refused', problem: messageOf(error) };
+    }
+    const imported = { file: fileName, leftOutDrafts: read.leftOutDrafts };
+    await this.startWithoutProfile(repositories, read.settings, imported);
+    const state = this.state.value;
+    // Another start, or leaving the page, takes the file's place, and then this one is done.
+    if (this.imported.value !== imported) {
+      return { kind: 'overtaken' };
+    }
+    if (state.kind === 'failed') {
+      await this.close();
+      return { kind: 'refused', problem: state.message };
+    }
+    return { kind: 'started' };
   }
 
   /**
@@ -501,6 +538,7 @@ export class BatchApply {
           if (current()) {
             this.#edits = undefined;
             this.editor.value = undefined;
+            this.imported.value = undefined;
           }
           return { kind: 'idle' };
         }
@@ -626,6 +664,7 @@ export class BatchApply {
       if (left === 0 && turn === this.#turn) {
         this.#edits = undefined;
         this.editor.value = undefined;
+        this.imported.value = undefined;
       }
       // Those that didn't finish come first, since they are what is left to do.
       const ordered = [...results.filter((result) => !result.finished), ...results.filter((result) => result.finished)];
@@ -675,6 +714,7 @@ export class BatchApply {
     this.#folder = undefined;
     this.#edits = undefined;
     this.editor.value = undefined;
+    this.imported.value = undefined;
     this.#assigned = new Map();
     this.state.value = { kind: 'idle' };
     this.#queue.letGo(this);
@@ -690,6 +730,7 @@ export class BatchApply {
     this.#folder = undefined;
     this.#edits = undefined;
     this.editor.value = undefined;
+    this.imported.value = undefined;
     this.#assigned = new Map();
     this.state.value = { kind: 'idle' };
     if (folder !== undefined) {

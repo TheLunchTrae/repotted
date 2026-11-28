@@ -77,9 +77,13 @@ export class OwnerMismatchError extends Error {
   readonly profile: OwnerType;
   readonly repository: OwnerType;
 
-  constructor(repo: RepoRef, profile: OwnerType, repository: OwnerType) {
+  /** `edits` is for an owner type set by one-off edits with no profile, which has no copy to make. */
+  constructor(repo: RepoRef, profile: OwnerType, repository: OwnerType, source: 'profile' | 'edits' = 'profile') {
+    const belongs = `${repo.owner}/${repo.name} belongs to ${repository === 'user' ? 'a personal account' : 'an organization'}`;
     super(
-      `This profile is for ${describeOwnerType(profile)}, and ${repo.owner}/${repo.name} belongs to ${repository === 'user' ? 'a personal account' : 'an organization'}. To use its settings there, make a copy of the profile and change the copy's type to ${describeOwnerType(repository)}.`,
+      source === 'profile'
+        ? `This profile is for ${describeOwnerType(profile)}, and ${belongs}. To use its settings there, make a copy of the profile and change the copy's type to ${describeOwnerType(repository)}.`
+        : `These one-off edits are for ${describeOwnerType(profile)}, and ${belongs}. Use edits for ${describeOwnerType(repository)}, or take out their owner_type.`,
     );
     this.name = 'OwnerMismatchError';
     this.profile = profile;

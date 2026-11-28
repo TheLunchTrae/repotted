@@ -277,3 +277,68 @@ export function withBundledInside(imported: ProfileImport): string {
   }
   return written(document, imported.text);
 }
+
+export interface OneTimeSettings {
+  /** What a one-time apply sets, as a profile writes it, with no drafts, references, or kind. */
+  readonly settings: Record<string, unknown>;
+  /** Whether the file held drafts, which a one-time apply leaves out as every apply does. */
+  readonly leftOutDrafts: boolean;
+}
+
+/**
+ * The settings an imported file sets, for a one-time apply that saves
+ * nothing: carried definitions written in, drafts left out. References the
+ * file carries no definition for are refused, since a one-time apply has no
+ * profiles folder to find them in. The settings are checked where the apply
+ * is staged.
+ */
+export function oneTimeSettings(imported: ProfileImport): OneTimeSettings {
+  const value: unknown = parse(withBundledInside(imported));
+  const read: Record<string, unknown> = isRecord(value) ? value : {};
+  const references = read['references'];
+  if (references !== undefined) {
+    const named = isRecord(references)
+      ? Object.values(references).flatMap((listed) => (Array.isArray(listed) ? (listed as unknown[]) : []))
+      : [];
+    throw new ProfileError(
+      `The file references ${named.length === 0 ? 'reusable definitions' : named.join(', ')} without carrying ${named.length === 1 ? 'it' : 'them'}. Export the profile from Repotted to carry its definitions.`,
+    );
+  }
+  if (read['extends'] !== undefined) {
+    throw new ProfileError(
+      'A profile cannot extend another. Copy the settings it needs into the file, or apply the profiles together.',
+    );
+  }
+  // A definition sets only its own section, as its library holds it to.
+  const section = imported.kind === undefined ? undefined : definitionSections[imported.kind];
+  const outside = Object.keys(read).filter(
+    (key) => section !== undefined && ![section, 'kind', 'owner_type', 'drafts'].includes(key),
+  );
+  if (outside.length > 0) {
+    throw new ProfileError(
+      `${imported.kind ?? ''} definitions may only set that section (${section ?? ''}), its drafts, and owner_type`,
+    );
+  }
+  const lists = new Set(['autolinks', 'actions_policies', 'rulesets', 'environments', 'labels']);
+  const settings: Record<string, unknown> = {};
+  let leftOutDrafts = false;
+  for (const [key, entry] of Object.entries(read)) {
+    if (key === 'drafts') {
+      leftOutDrafts = true;
+    } else if (lists.has(key) && Array.isArray(entry)) {
+      const kept = entry.filter((item: unknown) => !isRecord(item) || item['draft'] !== true);
+      leftOutDrafts ||= kept.length < entry.length;
+      if (kept.length > 0) {
+        settings[key] = kept;
+      }
+    } else if (key !== 'kind') {
+      settings[key] = entry;
+    }
+  }
+  if (Object.keys(settings).every((key) => key === 'owner_type')) {
+    throw new ProfileError(
+      leftOutDrafts ? 'The file holds only drafts, which an apply leaves out.' : 'The file sets nothing to apply.',
+    );
+  }
+  return { settings, leftOutDrafts };
+}

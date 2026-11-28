@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 import { type GitHub, parseRepo, repoPattern } from '../github/client.js';
 import { authoritativeSchema, type AuthoritativeSection } from '../plan/ownership.js';
-import { createPlan, type Plan, skippedDrafts } from '../plan/plan.js';
+import { createPlan, OwnerMismatchError, type Plan, skippedDrafts } from '../plan/plan.js';
 import {
   type Adjust,
   type Drafts,
@@ -368,6 +368,8 @@ export async function createStagedApply(
   repository: string,
   profiles: readonly string[],
   authoritative: readonly AuthoritativeSection[] = [],
+  /** One-off edits it starts with, as a profile writes them. */
+  edits: Readonly<Record<string, unknown>> = {},
 ): Promise<StagedApply> {
   authoritativeSchema.parse(authoritative);
   const repo = parseRepo(repository);
@@ -381,6 +383,10 @@ export async function createStagedApply(
     apply_to: `${repo.owner}/${repo.name}`,
     ...(authoritative.length === 0 ? {} : { authoritative }),
   };
+  const shared = Object.keys(edits).filter((key) => Object.hasOwn(stagedFields, key));
+  if (shared.length > 0) {
+    throw new ProfileError(`One-off edits cannot set ${shared.join(', ')}`);
+  }
   if (profiles.length > 1) {
     await resolveProfilesTogether(profiles);
   }
@@ -396,7 +402,7 @@ export async function createStagedApply(
     data['extends'] = relativePaths.length === 1 ? relativePaths[0] : relativePaths;
   }
   try {
-    await writeFile(file, `${lines.join('\n')}\n${stringify(data, { lineWidth: 0 })}`, { flag: 'wx' });
+    await writeFile(file, `${lines.join('\n')}\n${stringify({ ...data, ...edits }, { lineWidth: 0 })}`, { flag: 'wx' });
   } catch (error) {
     throw new ProfileError(`Cannot start a staged apply in ${file}`, { cause: error });
   }
@@ -646,7 +652,13 @@ export async function planStagedApply(
         ? {}
         : { exclude: [...new Set([...resolved.exclude, ...read.head.aliases])] }),
     },
-  );
+  ).catch((error: unknown) => {
+    // With no profile, the owner type came with the edits, so there is no profile to copy.
+    if (error instanceof OwnerMismatchError && resolved.profiles.length === 0) {
+      throw new OwnerMismatchError(parseRepo(resolved.repository), error.profile, error.repository, 'edits');
+    }
+    throw error;
+  });
   // Live reads can overlap a source edit. Do not return a plan whose inputs
   // have already changed, including rename aliases protected by exclusions.
   const latest = await resolveLayer(file, stagedLayer);

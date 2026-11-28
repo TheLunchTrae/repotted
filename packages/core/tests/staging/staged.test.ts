@@ -161,6 +161,19 @@ describe('staged apply', () => {
     expect(plan.changes.flatMap((change) => change.fields)).toEqual([{ field: 'has_issues', from: true, to: false }]);
   });
 
+  test('starts with one-off edits it is given, and refuses one that would name what it extends', async () => {
+    const files = await freshFolderWithProfile(base);
+    await createStagedApply(files.staged, 'lunch/app', [], [], { repository: { has_issues: false } });
+    const { plan } = await planStagedApply(new FakeGitHub(), files.staged);
+    expect(plan.changes.flatMap((change) => change.fields)).toEqual([{ field: 'has_issues', from: true, to: false }]);
+
+    const other = await freshFolderWithProfile(base);
+    expect(
+      await rejection(createStagedApply(other.staged, 'lunch/app', [], [], { extends: other.profile })),
+    ).toBeInstanceOf(ProfileError);
+    expect(await rejection(readFile(other.staged))).toBeInstanceOf(Error);
+  });
+
   test('lays one-off edits over the profile and leaves the profile file as it is', async () => {
     const files = await freshFolderWithProfile(base);
     await createStagedApply(files.staged, 'lunch/app', [files.profile]);

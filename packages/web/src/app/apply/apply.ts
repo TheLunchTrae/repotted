@@ -8,11 +8,14 @@ import {
   editStagedApply,
   type GitHub,
   lockChanges,
+  oneTimeSettings,
+  type OneTimeSettings,
   parseRepo,
   type Plan,
   planStagedApply,
   previewStagedApply,
   readAccess,
+  readProfileImport,
   resolveStagedApply,
   saveStagedEdits,
   StalePlanError,
@@ -65,6 +68,18 @@ export interface Reviewed {
   readonly appliedVersions: readonly AppliedVersion[];
   readonly assignmentKey: string | undefined;
 }
+
+/** The file a one-time apply's edits were imported from, by its name, and whether its drafts were left out. */
+export interface ImportedEdits {
+  readonly file: string;
+  readonly leftOutDrafts: boolean;
+}
+
+/** A one-time apply from a file started, was refused with why, or gave way to another start or a leave. */
+export type ImportStart =
+  | { readonly kind: 'started' }
+  | { readonly kind: 'refused'; readonly problem: string }
+  | { readonly kind: 'overtaken' };
 
 interface Target {
   readonly repository: string;
@@ -139,6 +154,8 @@ export class Apply {
   readonly editError = signal<string | undefined>(undefined);
   /** For an apply of a profile the repository doesn't use: whether applying adds it to the repository's profiles. */
   readonly addToRepositoryProfiles = signal(true);
+  /** The file a one-time apply's edits came from, while the apply lasts. */
+  readonly imported = signal<ImportedEdits | undefined>(undefined);
 
   readonly #github: GitHub;
   readonly #onSignedOut: () => void;
@@ -231,13 +248,42 @@ export class Apply {
     await this.#start(repository, [], false, []);
   }
 
+  /**
+   * A one-time apply whose edits are what the file sets, opened on them.
+   * Nothing is saved to the profiles. Says why when the file can't be
+   * applied, and then no apply starts.
+   */
+  async startFromImport(repository: string, fileName: string, text: string): Promise<ImportStart> {
+    let read: OneTimeSettings;
+    try {
+      read = oneTimeSettings(readProfileImport(text));
+    } catch (error) {
+      return { kind: 'refused', problem: messageOf(error) };
+    }
+    const imported = { file: fileName, leftOutDrafts: read.leftOutDrafts };
+    await this.#start(repository, [], false, [], read.settings, imported);
+    const state = this.state.value;
+    // Another start, or leaving the page, takes the file's place, and then this one is done.
+    if (this.imported.value !== imported) {
+      return { kind: 'overtaken' };
+    }
+    if (state.kind === 'failed') {
+      await this.close();
+      return { kind: 'refused', problem: state.message };
+    }
+    return { kind: 'started' };
+  }
+
   async #start(
     repository: string,
     profiles: readonly ComparedProfile[],
     review = false,
     authoritative?: readonly AuthoritativeSection[],
+    edits: Readonly<Record<string, unknown>> = {},
+    imported?: ImportedEdits,
   ): Promise<void> {
     const closing = this.#moveOn();
+    this.imported.value = imported;
     this.#profiles = profiles;
     const usesAssignment =
       authoritative === undefined &&
@@ -260,6 +306,7 @@ export class Apply {
           repository,
           profiles.map((profile) => profile.file),
           owned,
+          edits,
         );
       } catch (error) {
         await rm(dirname(file), { recursive: true, force: true });
@@ -576,6 +623,7 @@ export class Apply {
     this.#file = undefined;
     this.editor.value = undefined;
     this.editError.value = undefined;
+    this.imported.value = undefined;
     this.#lastAppAccessRead = undefined;
     this.state.value = { kind: 'idle' };
     this.#queue.letGo(this);
@@ -591,6 +639,7 @@ export class Apply {
     this.#file = undefined;
     this.editor.value = undefined;
     this.editError.value = undefined;
+    this.imported.value = undefined;
     this.#lastAppAccessRead = undefined;
     this.state.value = { kind: 'idle' };
     if (file !== undefined) {

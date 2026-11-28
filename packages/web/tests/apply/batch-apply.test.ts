@@ -593,3 +593,57 @@ test("a batch holds its one-off edits through the review, and lets go of them on
   await batch.apply();
   expect(batch.holdsOneOffEdits.value).toBe(false);
 });
+
+test('an imported file is the edits every repository of a one-time batch gets', async () => {
+  const { github, of } = fleet('lunch/app', 'lunch/api');
+  const batch = new BatchApply(github, () => undefined);
+
+  const start = await batch.startFromImport(
+    ['lunch/app', 'lunch/api'],
+    'production.yaml',
+    'kind: environment\nenvironments: [{ name: production, wait_timer: 15 }]\n',
+  );
+
+  expect(start).toEqual({ kind: 'started' });
+  expect(batch.state.value).toMatchObject({ kind: 'editing', repositories: ['lunch/app', 'lunch/api'] });
+  expect(batch.imported.value).toEqual({ file: 'production.yaml', leftOutDrafts: false });
+  await batch.review();
+  expect(statuses(batch)).toEqual(['lunch/app changes 1', 'lunch/api changes 1']);
+  await batch.apply();
+
+  expect(batch.state.value).toMatchObject({ kind: 'applied', left: 0 });
+  expect(of('lunch/app').state.environments.map((environment) => environment.name)).toEqual(['production']);
+  expect(of('lunch/api').state.environments.map((environment) => environment.name)).toEqual(['production']);
+  expect(batch.imported.value).toBeUndefined();
+  expect(await pending()).toEqual([]);
+});
+
+test('an imported file a one-time batch cannot apply says why and starts no batch', async () => {
+  const { github } = fleet('lunch/app');
+  const batch = new BatchApply(github, () => undefined);
+
+  const start = await batch.startFromImport(
+    ['lunch/app'],
+    'broken.yaml',
+    'environments: [{ name: production, wait_timer: soon }]\n',
+  );
+  expect(start.kind === 'refused' ? start.problem : `not refused: ${start.kind}`).toMatch(/wait_timer/u);
+  expect(batch.state.value).toEqual({ kind: 'idle' });
+  expect(await pending()).toEqual([]);
+});
+
+test('an import into a batch that another start overtakes says so, and leaves the later batch open', async () => {
+  const { github } = fleet('lunch/app', 'lunch/api');
+  const batch = new BatchApply(github, () => undefined);
+
+  const overtaken = batch.startFromImport(
+    ['lunch/app'],
+    'broken.yaml',
+    'environments: [{ name: production, wait_timer: soon }]\n',
+  );
+  const later = batch.startWithoutProfile(['lunch/api']);
+
+  expect(await overtaken).toEqual({ kind: 'overtaken' });
+  await later;
+  expect(batch.state.value).toMatchObject({ kind: 'editing', repositories: ['lunch/api'] });
+});

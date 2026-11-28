@@ -2,7 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import { answered, FakeGitHub } from '../../../core/tests/support/fake-github.js';
 import { pageQueue } from '../../src/app/apply/apply-queue.js';
-import { Apply } from '../../src/app/apply/apply.js';
+import { Apply, type ImportStart } from '../../src/app/apply/apply.js';
 import { type SettingField, settingSections } from '../../src/app/profile-editor/setting-fields.js';
 import { noAssignments } from '../../src/app/repositories/assignment-review.js';
 import { mkdir, readFile, readdir, rm, writeFile } from '../../src/engine/files.js';
@@ -40,6 +40,10 @@ function rows(apply: Apply): string[] {
 
 function writes(github: FakeGitHub): string[] {
   return github.calls.filter((call) => call.method !== 'GET').map((call) => `${call.method} ${call.path}`);
+}
+
+function problemOf(start: ImportStart): string {
+  return start.kind === 'refused' ? start.problem : `not refused: ${start.kind}`;
 }
 
 async function pending(): Promise<string[]> {
@@ -788,4 +792,70 @@ test("an apply's edit that turns off what the profile sets waits for a yes, and 
     'actions.allowed_actions',
   ]);
   expect(state.kind === 'reviewed' ? state.warnings : undefined).toEqual([]);
+});
+
+test('an imported file is applied once, as the edits of an apply with no profile, and nothing is saved', async () => {
+  const github = new FakeGitHub();
+  const apply = new Apply(github, () => undefined);
+
+  const start = await apply.startFromImport(
+    'lunch/app',
+    'web.yaml',
+    'repository: { has_wiki: false }\nlabels: [{ name: bug, color: d73a4a }, { name: later, draft: true }]\n',
+  );
+
+  expect(start).toEqual({ kind: 'started' });
+  expect(apply.state.value).toMatchObject({ kind: 'editing', fromProfile: false, profileName: '' });
+  expect(apply.imported.value).toEqual({ file: 'web.yaml', leftOutDrafts: true });
+  await apply.review();
+  expect(rows(apply)).toEqual(['repository.has_wiki', 'new label']);
+  await apply.apply();
+
+  expect(writes(github)).toEqual(['PATCH /repos/lunch/app', 'POST /repos/lunch/app/labels']);
+  expect(github.state.labels.map((label) => label.name)).toContain('bug');
+  expect(github.state.labels.map((label) => label.name)).not.toContain('later');
+  expect(await readdir('/profiles', { withFileTypes: true }).catch(() => [])).toEqual([]);
+  expect(await pending()).toEqual([]);
+});
+
+test('an imported file that cannot be applied says why and starts no apply', async () => {
+  const apply = new Apply(new FakeGitHub(), () => undefined);
+
+  expect(problemOf(await apply.startFromImport('lunch/app', 'web.yaml', 'repository: { has_wiki: broken }\n'))).toMatch(
+    /has_wiki/u,
+  );
+  expect(apply.state.value).toEqual({ kind: 'idle' });
+  expect(apply.imported.value).toBeUndefined();
+  expect(await pending()).toEqual([]);
+
+  expect(
+    problemOf(await apply.startFromImport('lunch/app', 'web.yaml', 'references: { rulesets: [./main.yaml] }\n')),
+  ).toMatch(/without carrying it/u);
+  expect(apply.state.value).toEqual({ kind: 'idle' });
+});
+
+test('an import that another start overtakes says so, and leaves the later apply open', async () => {
+  const apply = new Apply(new FakeGitHub(), () => undefined);
+
+  const overtaken = apply.startFromImport('lunch/app', 'web.yaml', 'repository: { has_wiki: broken }\n');
+  await apply.startWithoutProfile('lunch/app');
+
+  expect(await overtaken).toEqual({ kind: 'overtaken' });
+  expect(apply.state.value).toMatchObject({ kind: 'editing', repository: 'lunch/app' });
+  expect(apply.imported.value).toBeUndefined();
+  expect(await pending()).toHaveLength(1);
+});
+
+test('imported settings for another owner type say to change the edits, since no profile can be copied', async () => {
+  const github = new FakeGitHub();
+  github.state.ownerType = 'User';
+  const apply = new Apply(github, () => undefined);
+
+  await apply.startFromImport('lunch/app', 'org.yaml', 'owner_type: organization\nrepository: { has_wiki: false }\n');
+  await apply.review();
+
+  const state = apply.state.value;
+  expect(state.kind === 'failed' ? state.message : `not failed: ${state.kind}`).toContain(
+    'Use edits for personal accounts, or take out their owner_type.',
+  );
 });
